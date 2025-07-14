@@ -26,3 +26,6 @@ venv/
 dist/
 build/
 *.egg-info/
+
+# chat_errors_log
+*.log
