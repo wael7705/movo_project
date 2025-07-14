@@ -1,0 +1,28 @@
+#ملفات بايثون المؤقتة
+__pycache__/
+*.__pyc
+
+#إعدادات محررات النصوص
+.vscode/
+.idea/
+*.sublime-workspace
+
+#ملفات النظام
+.DS_Store
+Thumbs.db
+
+#بيئة افتراضية
+venv/
+.env
+
+#ملفات اللوج او التجريب
+*.log
+*.sqlite3
+
+#ملفات Jupyter/Notebook
+*.ipynd_checkpoints/
+
+# مجلدات البناء / النشر
+dist/
+build/
+*.egg-info/
