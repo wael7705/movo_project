@@ -1,0 +1,68 @@
+# Modern FastAPI with async support
+fastapi==0.100.0
+uvicorn[standard]==0.22.0
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Database - PostgreSQL with async support
+sqlalchemy[asyncio]==2.0.23
+asyncpg==0.29.0
+alembic==1.13.1
+
+# AI and ML support
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.3.2
+#tensorflow
+#torch==2.1.2
+
+# Monitoring and logging
+prometheus-client==0.20.0
+structlog==23.2.0
+
+# HTTP and networking
+httpx==0.26.0
+aiohttp==3.9.5
+websockets==12.0
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+
+# Utilities
+python-dotenv==1.0.1
+click==8.1.7
+rich==13.7.0
+typer==0.9.0
+
+# Development tools
+pytest==7.4.4
+pytest-asyncio==0.21.1
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+
+# Production
+gunicorn==21.2.0 
+
+
+requests
+fastapi-users[sqlalchemy,jwt]>=12.1.3
+passlib[bcrypt]>=1.7.4
+python-jose[cryptography]>=3.3.0
+googlemaps
+geopy
+requests
+streamlit-folium
+streamlit-option-menu
+python-dotenv
+fastapi-users
+httpx
+phonenumbers
+email-validator
+streamlit-authenticator
+aiohttp
+openai
+fastapi-users-db-sqlalchemy
+streamlit-geolocation
