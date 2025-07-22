@@ -3,14 +3,15 @@ Orders API routes with async support
 مسارات API للطلبات مع دعم غير متزامن
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any
 from backend.database.database import get_db
-from backend.models import Order
+from backend.models import Order, Note
 from backend.services.delivery_service import DeliveryService
 from pydantic import BaseModel
 import logging
+from backend.models.enums import OrderStatusEnum
 
 logger = logging.getLogger(__name__)
 
@@ -81,19 +82,23 @@ async def create_order(
         )
 
 
+# 1. تصفية الطلبات حسب الحالة
 @router.get("/", response_model=List[Dict[str, Any]])
 async def get_orders(
+    order_status: str = None,  # <-- غيرت الاسم هنا
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db)
 ):
-    """Get all orders with pagination"""
+    """Get all orders with optional status filter and pagination"""
     try:
         from sqlalchemy import select
-        query = select(Order).offset(skip).limit(limit)
+        query = select(Order)
+        if order_status:
+            query = query.where(Order.status == OrderStatusEnum(order_status))
+        query = query.offset(skip).limit(limit)
         result = await db.execute(query)
         orders = result.scalars().all()
-        
         return [
             {
                 "order_id": order.order_id,
@@ -106,11 +111,13 @@ async def get_orders(
             }
             for order in orders
         ]
-        
     except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
         logger.error(f"Error getting orders: {e}")
+        from fastapi import status as fastapi_status
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
 
@@ -195,3 +202,97 @@ async def update_order(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         ) 
+
+# 2. Endpoints للملاحظات
+class NoteCreate(BaseModel):
+    note_text: str
+
+@router.get("/{order_id}/notes", response_model=List[Dict[str, Any]])
+async def get_order_notes(order_id: int, db: AsyncSession = Depends(get_db)):
+    """Get notes for a specific order"""
+    try:
+        from sqlalchemy import select
+        query = select(Note).where(Note.target_type == "order", Note.reference_id == order_id)
+        result = await db.execute(query)
+        notes = result.scalars().all()
+        return [
+            {
+                "note_id": note.note_id,
+                "note_text": note.note_text,
+                "created_at": note.created_at.isoformat() if note.created_at else None
+            }
+            for note in notes
+        ]
+    except Exception as e:
+        logger.error(f"Error getting notes: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@router.post("/{order_id}/notes", response_model=Dict[str, Any])
+async def add_note(order_id: int, note: NoteCreate, db: AsyncSession = Depends(get_db)):
+    """Add a note to an order"""
+    try:
+        new_note = Note(
+            note_type="order",
+            target_type="order",
+            reference_id=order_id,
+            note_text=note.note_text
+        )
+        db.add(new_note)
+        await db.commit()
+        await db.refresh(new_note)
+        return {
+            "note_id": new_note.note_id,
+            "note_text": new_note.note_text,
+            "created_at": new_note.created_at.isoformat() if new_note.created_at else None
+        }
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error adding note: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+# 3. Endpoint لتعديل العنوان
+class AddressUpdate(BaseModel):
+    new_address: str
+
+@router.patch("/{order_id}/address", response_model=Dict[str, Any])
+async def update_order_address(order_id: int, address_update: AddressUpdate, db: AsyncSession = Depends(get_db)):
+    """Update order address"""
+    try:
+        from sqlalchemy import select
+        query = select(Order).where(Order.order_id == order_id)
+        result = await db.execute(query)
+        order = result.scalar_one_or_none()
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        order.delivery_address = address_update.new_address
+        await db.commit()
+        await db.refresh(order)
+        return {
+            "order_id": order.order_id,
+            "delivery_address": order.delivery_address
+        }
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating address: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+# 4. WebSocket لتحديثات لحظية
+@router.websocket("/ws/orders")
+async def websocket_orders(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # يمكنك هنا إرسال إشعار عند تحديث الطلبات
+            await websocket.send_text("order_updated")
+    except WebSocketDisconnect:
+        pass 

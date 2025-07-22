@@ -4,7 +4,7 @@ Order models
 """
 
 from sqlalchemy import Column, Integer, String, DECIMAL, Boolean, ForeignKey, Text, TIMESTAMP, Interval, CheckConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, foreign
 from sqlalchemy.sql import func
 from ..database.config import Base
 from .enums import OrderStatusEnum, PaymentMethodEnum, DeliveryMethodEnum
@@ -48,7 +48,12 @@ class Order(Base):
     captain = relationship("Captain", back_populates="orders")
     stage_durations = relationship("OrderStageDuration", back_populates="order", cascade="all, delete-orphan")
     ratings = relationship("Rating", back_populates="order")
-    notes = relationship("Note", back_populates="order")
+    notes = relationship(
+        "Note",
+        primaryjoin="and_(Order.order_id==foreign(Note.reference_id), Note.target_type=='order')",
+        viewonly=True,
+        back_populates=None  # إزالة back_populates لتفادي التعارض
+    )
     issues = relationship("Issue", back_populates="order")
     call_logs = relationship("CallLog", back_populates="order")
     ai_decisions = relationship("AIDecisionLog", back_populates="order")

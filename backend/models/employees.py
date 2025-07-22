@@ -42,4 +42,4 @@ class Employee(Base):
     # Relationships
     issues = relationship("Issue", back_populates="employee")
     call_logs = relationship("CallLog", back_populates="employee")
-    alerts_resolved = relationship("AlertLog", back_populates="resolved_by") 
+    alerts_resolved = relationship("AlertLog", back_populates="resolved_by_employee") 

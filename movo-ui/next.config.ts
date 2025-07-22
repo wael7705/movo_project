@@ -1,14 +1,8 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
-  turbopack: {
-    rules: {
-      '*.css': {
-        loaders: ['@tailwindcss/postcss'],
-        as: '*.css',
-      },
-    },
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  experimental: {
+    turbo: false,
   },
 };
 
-export default nextConfig;
+module.exports = nextConfig;

@@ -15,7 +15,7 @@ from typing import Dict, Any
 from backend.config import settings
 from backend.database.database import init_db, close_db, health_check
 from backend.api.routes import orders, captains, restaurants, customers, chat
-from backend.auth import routes as auth_routes
+from backend.auth.routes import router as auth_router
 
 # Configure logging
 logging.basicConfig(
@@ -124,7 +124,7 @@ app.include_router(captains.router, prefix="/api/v1/captains", tags=["Captains"]
 app.include_router(restaurants.router, prefix="/api/v1/restaurants", tags=["Restaurants"])
 app.include_router(customers.router, prefix="/api/v1/customers", tags=["Customers"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
-app.include_router(auth_routes.router)
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
 
 
 if __name__ == "__main__":
