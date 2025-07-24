@@ -35,11 +35,44 @@ MEMBERSHIP_TYPES = ['normal', 'vip', 'movo_plus']
 conn = psycopg2.connect(**DB_CONFIG)
 cursor = conn.cursor()
 
-# 1. إدراج العملاء
+# ...existing code...
+
+# 0. توليد المستخدمين وربطهم بالعملاء والكباتن والمطاعم
+users = []
+for i in range(N_CUSTOMERS):
+    phone = f"050{1000000 + i}"
+    email = f"customer{i}@example.com"
+    password = "hashed_password"
+    role = 'customer'
+    users.append((phone, email, password, role, True))
+for i in range(N_CAPTAINS):
+    phone = f"050{2000000 + i}"
+    email = f"captain{i}@example.com"
+    password = "hashed_password"
+    role = 'captain'
+    users.append((phone, email, password, role, True))
+for i in range(N_RESTAURANTS):
+    phone = f"050{3000000 + i}"
+    email = f"restaurant{i}@example.com"
+    password = "hashed_password"
+    role = 'restaurant'
+    users.append((phone, email, password, role, True))
+execute_values(cursor, """
+    INSERT INTO users (phone, email, password, role, is_active)
+    VALUES %s RETURNING id
+""", users)
+user_ids = [row[0] for row in cursor.fetchall()]
+customer_user_ids = user_ids[:N_CUSTOMERS]
+captain_user_ids = user_ids[N_CUSTOMERS:N_CUSTOMERS+N_CAPTAINS]
+restaurant_user_ids = user_ids[N_CUSTOMERS+N_CAPTAINS:]
+
+# ...existing code...
+
+# 1. إدراج العملاء بدون user_id
 customers = []
-for _ in range(N_CUSTOMERS):
+for i in range(N_CUSTOMERS):
     name = fake.name()[:100]
-    phone = fake.phone_number()[:20]
+    phone = f"050{1000000 + i}"
     lat = round(random.uniform(21.0, 25.0), 6)
     lng = round(random.uniform(39.0, 47.0), 6)
     membership = random.choice(MEMBERSHIP_TYPES)
@@ -50,9 +83,9 @@ execute_values(cursor, """
 """, customers)
 customer_ids = [row[0] for row in cursor.fetchall()]
 
-# 2. إدراج المطاعم
+# 2. إدراج المطاعم بدون user_id
 restaurants = []
-for _ in range(N_RESTAURANTS):
+for i in range(N_RESTAURANTS):
     name = fake.company()[:100]
     lat = round(random.uniform(21.0, 25.0), 6)
     lng = round(random.uniform(39.0, 47.0), 6)
@@ -68,12 +101,12 @@ execute_values(cursor, """
 """, restaurants)
 restaurant_ids = [row[0] for row in cursor.fetchall()]
 
-# 3. إدراج الكباتن
+# 3. إدراج الكباتن بدون user_id
 captains = []
-for _ in range(N_CAPTAINS):
+for i in range(N_CAPTAINS):
     name = fake.name()[:100]
-    phone = fake.phone_number()[:20]
-    alt_phone = fake.phone_number()[:20]
+    phone = f"050{2000000 + i}"
+    alt_phone = f"050{2100000 + i}"
     vehicle = random.choice(['دراجة نارية', 'سيارة', 'دراجة هوائية'])
     delivered = random.randint(0, 300)
     perf = round(random.uniform(3.5, 5.0), 2)
@@ -85,6 +118,7 @@ execute_values(cursor, """
 """, captains)
 captain_ids = [row[0] for row in cursor.fetchall()]
 
+# ...existing code for orders, notes, discounts...
 # 4. إدراج الطلبات
 orders = []
 now = datetime.now()

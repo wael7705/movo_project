@@ -53,13 +53,26 @@ CREATE TYPE employee_role_enum AS ENUM ('admin', 'supervisor', 'staff');
 -- =============
 -- USER ROLES ENUM
 -- =============
-DO $$ BEGIN
-    CREATE TYPE user_role_enum AS ENUM ('customer', 'captain', 'restaurant', 'data_entry', 'call_center_agent', 'call_center_supervisor', 'admin', 'ai');
-EXCEPTION WHEN duplicate_object THEN null; END $$;
+--DO $$ BEGIN
+--    CREATE TYPE user_role_enum AS ENUM ('customer', 'captain', 'restaurant', 'data_entry', 'call_center_agent', 'call_center_supervisor', 'admin', 'ai');
+--EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ================
 -- CREATE TABLES
 -- ================
+
+-- USERS TABLE
+--CREATE TABLE IF NOT EXISTS users (
+    --  id SERIAL PRIMARY KEY,
+    --phone VARCHAR(20) UNIQUE NOT NULL,
+    --email VARCHAR(100) UNIQUE,
+    --password VARCHAR(255) NOT NULL,
+    --role user_role_enum NOT NULL,
+    --is_active BOOLEAN DEFAULT TRUE,
+    --device_id VARCHAR(100),
+    --created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+--);
+
 -- Customers
 CREATE TABLE customers (
     customer_id SERIAL PRIMARY KEY,
@@ -149,22 +162,50 @@ CREATE TABLE orders (
     status order_status_enum DEFAULT 'pending',
     payment_method payment_method_enum DEFAULT 'cash',
     delivery_method delivery_method_enum DEFAULT 'standard',
-    time_created TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    estimated_delivery_time INTERVAL,
-    distance_meters INTEGER, -- Distance between restaurant and customer in meters
-    delivery_fee NUMERIC(10,2), -- Captain's delivery fee: distance_meters * unit_cost_per_meter
-    total_price_customer NUMERIC(10,2), -- Total price including delivery fee and restaurant invoice
-    total_price_restaurant NUMERIC(10,2), -- Restaurant invoice (excluding delivery fee)
-    cancel_count_per_day INTEGER DEFAULT 0,
-    issue TEXT,
-    order_note TEXT,
-    is_scheduled BOOLEAN DEFAULT FALSE,
-    call_restaurant_time TIMESTAMP WITHOUT TIME ZONE,
-    select_captain_time TIMESTAMP WITHOUT TIME ZONE,
-    expected_delivery_duration INTERVAL,
+    time_created TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP, -- وقت إنشاء الطلب
+    delivered_at TIMESTAMP, -- وقت التسليم الفعلي
+    is_scheduled BOOLEAN DEFAULT FALSE, -- هل الطلب مجدول؟
+    call_restaurant_time TIMESTAMP WITHOUT TIME ZONE, -- وقت الاتصال بالمطعم
+    select_captain_time TIMESTAMP WITHOUT TIME ZONE, -- وقت اختيار الكابتن
+    estimated_delivery_time INTERVAL, -- الوقت المتوقع للتسليم
+    expected_delivery_duration INTERVAL, -- مدة التوصيل المتوقعة (للتوافق مع order_timings)
+    processing_delay INTERVAL DEFAULT INTERVAL '6 minutes', -- مدة معالجة افتراضية
+    distance_meters INTEGER, -- المسافة بين المطعم والعميل
+    delivery_fee NUMERIC(10,2), -- رسوم التوصيل
+    total_price_customer NUMERIC(10,2), -- السعر النهائي للعميل
+    total_price_restaurant NUMERIC(10,2), -- فاتورة المطعم
+    cancel_count_per_day INTEGER DEFAULT 0, -- عدد مرات الإلغاء في اليوم
+    issue TEXT, -- مشكلة مرتبطة بالطلب
+    order_note TEXT, -- ملاحظات الطلب
+    ai_estimated_total_time INTERVAL GENERATED ALWAYS AS (
+        COALESCE(expected_delivery_duration, INTERVAL '0') + INTERVAL '6 minutes'
+    ) STORED, -- الوقت الكلي المتوقع (بدون expected_preparation_time)
     CONSTRAINT check_positive_prices CHECK (total_price_customer >= 0 AND total_price_restaurant >= 0 AND delivery_fee >= 0),
     CONSTRAINT check_cancel_count CHECK (cancel_count_per_day >= 0),
     CONSTRAINT check_distance CHECK (distance_meters >= 0)
+);
+
+CREATE TABLE order_timings (
+    timing_id SERIAL PRIMARY KEY,
+    order_id INTEGER NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+    expected_preparation_time INTERVAL NOT NULL,
+    expected_delivery_duration INTERVAL NOT NULL,
+    total_expected_duration INTERVAL GENERATED ALWAYS AS (
+        expected_preparation_time + expected_delivery_duration + INTERVAL '6 minutes'
+    ) STORED,
+    actual_processing_time INTERVAL,
+    actual_delivery_time INTERVAL,
+    estimated_delivery_time TIMESTAMP,
+    CONSTRAINT fk_order_timings_order FOREIGN KEY(order_id) REFERENCES orders(order_id) ON DELETE CASCADE
+);
+
+CREATE TABLE order_stage_durations (
+    stage_duration_id SERIAL PRIMARY KEY,
+    order_id INTEGER NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+    stage_name TEXT NOT NULL,
+    duration INTERVAL,
+    stage_start_time TIMESTAMP,
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Weather Log
@@ -359,27 +400,20 @@ CREATE TABLE alerts_log (
     resolved_by INTEGER REFERENCES employees(employee_id) ON DELETE SET NULL, -- الموظف الذي حل التنبيه
     resolution_notes TEXT, -- ملاحظات الحل
     auto_resolved BOOLEAN DEFAULT false, -- هل تم الحل تلقائياً؟
-    escalation_level INTEGER DEFAULT 0 -- مستوى التصعيد (0 = لا تصعيد، 1+ = مستويات التصعيد)
-);
-
--- Order Stage Durations - مدة مراحل الطلب
-CREATE TABLE order_stage_durations (
-    stage_duration_id SERIAL PRIMARY KEY,
-    order_id INTEGER REFERENCES orders(order_id) ON DELETE CASCADE,
-    stage_name VARCHAR(50) NOT NULL, -- اسم المرحلة: pending, accepted, preparing, out_for_delivery, delivered
-    stage_start_time TIMESTAMP WITHOUT TIME ZONE NOT NULL, -- وقت بداية المرحلة
-    stage_end_time TIMESTAMP WITHOUT TIME ZONE, -- وقت نهاية المرحلة (NULL إذا لم تنته بعد)
-    duration INTERVAL, -- مدة المرحلة (محسوبة أو مخزنة مباشرة)
-    stage_status VARCHAR(20) DEFAULT 'active', -- حالة المرحلة: active, completed, skipped, cancelled
-    stage_metadata JSONB, -- بيانات إضافية للمرحلة (مثل سبب التأخير، ملاحظات، إلخ)
-    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(order_id, stage_name, stage_start_time) -- منع تكرار نفس المرحلة لنفس الطلب في نفس الوقت
+    escalation_level INTEGER DEFAULT 0 -- مستوى التصعيد (0 = لا تصعيد، 1+ = مستويات التصعيد المتتالية)
 );
 
 -- =============================
 -- VIEWS
 -- =============================
+
+CREATE VIEW order_processing_time_view AS
+SELECT
+    order_id,
+    SUM(duration) AS total_processing_time
+FROM order_stage_durations
+WHERE stage_name IN ('pending', 'assigning_captain', 'restaurant_acceptance', 'preparing')
+GROUP BY order_id;
 
 CREATE VIEW order_summary AS
 SELECT 
@@ -424,6 +458,15 @@ LEFT JOIN order_stage_durations accept ON o.order_id = accept.order_id AND accep
 LEFT JOIN order_stage_durations captain_selection ON o.order_id = captain_selection.order_id AND captain_selection.stage_name = 'captain_selection'
 LEFT JOIN order_stage_durations preparing ON o.order_id = preparing.order_id AND preparing.stage_name = 'preparing'
 LEFT JOIN order_stage_durations delivery ON o.order_id = delivery.order_id AND delivery.stage_name = 'out_for_delivery';
+
+CREATE OR REPLACE VIEW order_stage_summary AS
+SELECT
+  order_id,
+  stage_name,
+  duration,
+  recorded_at
+FROM order_stage_durations
+ORDER BY order_id, recorded_at;
 
 CREATE VIEW restaurant_performance AS
 SELECT 
@@ -809,7 +852,7 @@ CREATE INDEX idx_alerts_resolved_by ON alerts_log(resolved_by);
 CREATE INDEX idx_stage_durations_order_id ON order_stage_durations(order_id);
 CREATE INDEX idx_stage_durations_stage_name ON order_stage_durations(stage_name);
 CREATE INDEX idx_stage_durations_start_time ON order_stage_durations(stage_start_time);
-CREATE INDEX idx_stage_durations_status ON order_stage_durations(stage_status);
+--CREATE INDEX idx_stage_durations_status ON order_stage_durations(stage_status);
 CREATE INDEX idx_stage_durations_order_stage ON order_stage_durations(order_id, stage_name);
 
 -- Menu items indexes
@@ -1084,6 +1127,14 @@ COMMENT ON COLUMN menu_items.discount_percentage IS 'نسبة الحسم الم�
 
 COMMENT ON TYPE employee_role_enum IS 'نظام أدوار الموظفين للتحكم في الصلاحيات: admin (مدير) - صلاحيات كاملة، supervisor (مشرف) - صلاحيات إشرافية، staff (موظف) - صلاحيات محدودة';
 
+--COMMENT ON TABLE users IS 'جدول المستخدمين الأساسي للنظام مع دعم الأدوار والصلاحيات.';
+--COMMENT ON COLUMN users.role IS 'دور المستخدم: customer, captain, restaurant, data_entry, call_center_agent, call_center_supervisor, admin, ai';
+--COMMENT ON COLUMN users.device_id IS 'معرف الجهاز لربط الحساب بجهاز محدد (اختياري)';
+--COMMENT ON COLUMN customers.user_id IS 'معرف المستخدم المرتبط بهذا العميل (من جدول users)';
+--COMMENT ON COLUMN captains.user_id IS 'معرف المستخدم المرتبط بهذا الكابتن (من جدول users)';
+--COMMENT ON COLUMN restaurants.user_id IS 'معرف المستخدم المرتبط بهذا المطعم (من جدول users)';
+
+
 -- =============================
 -- AI & ANALYTICS TABLES COMMENTS
 -- =============================
@@ -1120,7 +1171,7 @@ COMMENT ON COLUMN order_stage_durations.stage_name IS 'اسم المرحلة: pe
 COMMENT ON COLUMN order_stage_durations.stage_start_time IS 'وقت بداية المرحلة (مطلوب)';
 COMMENT ON COLUMN order_stage_durations.stage_end_time IS 'وقت نهاية المرحلة (NULL إذا لم تنته بعد)';
 COMMENT ON COLUMN order_stage_durations.duration IS 'مدة المرحلة (يمكن حسابها أو تخزينها مباشرة للتحسين)';
-COMMENT ON COLUMN order_stage_durations.stage_status IS 'حالة المرحلة: active (نشطة)، completed (مكتملة)، skipped (متخطاة)، cancelled (ملغاة)';
+--COMMENT ON COLUMN order_stage_durations.stage_status IS 'حالة المرحلة: active (نشطة)، completed (مكتملة)، skipped (متخطاة)، cancelled (ملغاة)';
 COMMENT ON COLUMN order_stage_durations.stage_metadata IS 'بيانات إضافية للمرحلة (JSON: سبب التأخير، ملاحظات، تفاصيل إضافية)';
 COMMENT ON COLUMN order_stage_durations.updated_at IS 'آخر تحديث للمرحلة (للتتبع)';
 
@@ -1302,49 +1353,3 @@ WHERE mi.is_visible = true
 GROUP BY mi.item_id, mi.restaurant_id, mi.name_item, mi.price, mi.discount_percentage, mi.is_visible, mi.extras;
 
 COMMENT ON VIEW menu_items_with_options IS 'عرض شامل للأصناف مع إضافاتها المتاحة. يستخدم للواجهة الأمامية لعرض الأصناف مع خيارات الإضافات تلقائياً. يدعم الإضافات الجديدة من جدول menu_item_options والإضافات القديمة من عمود extras.';
-
--- =============
--- USERS TABLE
--- =============
-CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    phone VARCHAR(20) UNIQUE NOT NULL,
-    email VARCHAR(100) UNIQUE,
-    password VARCHAR(255) NOT NULL,
-    role user_role_enum NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE,
-    device_id VARCHAR(100),
-    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-
--- =============
--- ALTER CUSTOMERS TABLE
--- =============
-ALTER TABLE customers ADD COLUMN IF NOT EXISTS user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE SET NULL;
-
--- =============
--- ALTER CAPTAINS TABLE
--- =============
-ALTER TABLE captains ADD COLUMN IF NOT EXISTS user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE SET NULL;
-
--- =============
--- ALTER RESTAURANTS TABLE
--- =============
-ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE SET NULL;
-
--- =============
--- INDEXES FOR USERS
--- =============
-CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
-CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
-CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active);
-
--- =============
--- COMMENT
--- =============
-COMMENT ON TABLE users IS 'جدول المستخدمين الأساسي للنظام مع دعم الأدوار والصلاحيات.';
-COMMENT ON COLUMN users.role IS 'دور المستخدم: customer, captain, restaurant, data_entry, call_center_agent, call_center_supervisor, admin, ai';
-COMMENT ON COLUMN users.device_id IS 'معرف الجهاز لربط الحساب بجهاز محدد (اختياري)';
-COMMENT ON COLUMN customers.user_id IS 'معرف المستخدم المرتبط بهذا العميل (من جدول users)';
-COMMENT ON COLUMN captains.user_id IS 'معرف المستخدم المرتبط بهذا الكابتن (من جدول users)';
-COMMENT ON COLUMN restaurants.user_id IS 'معرف المستخدم المرتبط بهذا المطعم (من جدول users)';

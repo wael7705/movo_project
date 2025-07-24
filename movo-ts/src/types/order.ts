@@ -1,5 +1,4 @@
-export type OrderStatus =
-    | 'pending'
+export type OrderStatus = 'pending'
     | 'captain_assigned'
     | 'processing'
     | 'delayed'
@@ -7,6 +6,7 @@ export type OrderStatus =
     | 'delivered'
     | 'cancelled'
     | 'issue';
+
 export interface Order {
     id: string;
     trackId: string;

@@ -60,6 +60,8 @@ class Order(Base):
     ai_failures = relationship("AIFailure", back_populates="order")
     alerts = relationship("AlertLog", back_populates="order")
     order_discounts = relationship("OrderDiscount", back_populates="order", cascade="all, delete-orphan")
+    # Relationship to timing
+    timing = relationship("OrderTiming", uselist=False, back_populates="order")
 
 
 class OrderStageDuration(Base):
@@ -75,6 +77,9 @@ class OrderStageDuration(Base):
     stage_status = Column(String(20), default="active")  # active, completed, skipped, cancelled
     stage_metadata = Column(Text)  # JSON data for additional stage info
     created_at = Column(TIMESTAMP(timezone=False), server_default=func.now())
+    delivered_at = Column(TIMESTAMP(timezone=False))
+    processing_delay = Column(Interval, default='6 minutes')
+    ai_estimated_total_time = Column(Interval)
     updated_at = Column(TIMESTAMP(timezone=False), server_default=func.now(), onupdate=func.now())
     
     # Relationships
