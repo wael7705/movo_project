@@ -160,7 +160,7 @@ class DeliveryService:
         try:
             # Get orders from last N days
             query = select(Order).where(
-                Order.time_created >= func.date(func.now() - func.interval(f'{days} days'))
+                Order.created_at >= func.date(func.now() - func.interval(f'{days} days'))
             )
             
             result = await self.db.execute(query)
@@ -202,7 +202,7 @@ class DeliveryService:
         try:
             # This is a placeholder for future AI route optimization
             # For now, return orders sorted by creation time
-            return sorted(orders, key=lambda x: x.time_created)
+            return sorted(orders, key=lambda x: x.created_at)
             
         except Exception as e:
             logger.error(f"Error optimizing route: {e}")

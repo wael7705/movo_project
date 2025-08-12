@@ -1,7 +1,18 @@
 {
-	"dependencies": {
-		"axios": "^1.10.0",
-		"leaflet": "^1.9.4",
-		"react-leaflet": "^5.0.0"
-	}
+  "name": "movo_project",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev:api": "uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload",
+    "dev:web": "cd movo-ts && pnpm run dev",
+    "dev:all": "concurrently -k \"pnpm:dev:api\" \"pnpm:dev:web\""
+  },
+  "dependencies": {
+    "axios": "^1.10.0",
+    "leaflet": "^1.9.4",
+    "react-leaflet": "^5.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
 }

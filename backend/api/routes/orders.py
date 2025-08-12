@@ -95,7 +95,7 @@ async def get_orders(
         from sqlalchemy import select
         query = select(Order)
         if order_status:
-            query = query.where(Order.status == OrderStatusEnum(order_status))
+            query = query.where(Order.status == order_status)
         query = query.offset(skip).limit(limit)
         result = await db.execute(query)
         orders = result.scalars().all()
@@ -107,7 +107,7 @@ async def get_orders(
                 "status": order.status,
                 "total_price_customer": order.total_price_customer,
                 "delivery_fee": order.delivery_fee,
-                "time_created": order.time_created.isoformat() if order.time_created else None
+                "created_at": order.created_at.isoformat() if getattr(order, 'created_at', None) else None
             }
             for order in orders
         ]
@@ -148,7 +148,7 @@ async def get_order(
             "total_price_customer": order.total_price_customer,
             "delivery_fee": order.delivery_fee,
             "captain_id": order.captain_id,
-            "time_created": order.time_created.isoformat() if order.time_created else None
+            "created_at": order.created_at.isoformat() if getattr(order, 'created_at', None) else None
         }
         
     except HTTPException:

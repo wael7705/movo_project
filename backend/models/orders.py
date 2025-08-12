@@ -4,7 +4,7 @@ Order models
 """
 
 from sqlalchemy import Column, Integer, String, DECIMAL, Boolean, ForeignKey, Text, TIMESTAMP, Interval, CheckConstraint
-from sqlalchemy.orm import relationship, foreign
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ..database.config import Base
 from .enums import OrderStatusEnum, PaymentMethodEnum, DeliveryMethodEnum
@@ -48,20 +48,13 @@ class Order(Base):
     captain = relationship("Captain", back_populates="orders")
     stage_durations = relationship("OrderStageDuration", back_populates="order", cascade="all, delete-orphan")
     ratings = relationship("Rating", back_populates="order")
-    notes = relationship(
-        "Note",
-        primaryjoin="and_(Order.order_id==foreign(Note.reference_id), Note.target_type=='order')",
-        viewonly=True,
-        back_populates=None  # إزالة back_populates لتفادي التعارض
-    )
+    notes = relationship("Note", back_populates="order")
     issues = relationship("Issue", back_populates="order")
     call_logs = relationship("CallLog", back_populates="order")
     ai_decisions = relationship("AIDecisionLog", back_populates="order")
     ai_failures = relationship("AIFailure", back_populates="order")
     alerts = relationship("AlertLog", back_populates="order")
     order_discounts = relationship("OrderDiscount", back_populates="order", cascade="all, delete-orphan")
-    # Relationship to timing
-    timing = relationship("OrderTiming", uselist=False, back_populates="order")
 
 
 class OrderStageDuration(Base):
@@ -77,9 +70,6 @@ class OrderStageDuration(Base):
     stage_status = Column(String(20), default="active")  # active, completed, skipped, cancelled
     stage_metadata = Column(Text)  # JSON data for additional stage info
     created_at = Column(TIMESTAMP(timezone=False), server_default=func.now())
-    delivered_at = Column(TIMESTAMP(timezone=False))
-    processing_delay = Column(Interval, default='6 minutes')
-    ai_estimated_total_time = Column(Interval)
     updated_at = Column(TIMESTAMP(timezone=False), server_default=func.now(), onupdate=func.now())
     
     # Relationships

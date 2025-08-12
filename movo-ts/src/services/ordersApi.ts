@@ -1,68 +1,51 @@
-import axios from 'axios';
+import axios from "axios";
 
-const API_URL = 'http://localhost:8000/api/v1'; // يجب أن يطابق مسار الباكند
+const API_URL: string =
+  (import.meta as any)?.env?.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
 
-export const getOrdersByStatus = async (status: string) => {
-  try {
-    return await axios.get(`${API_URL}/orders/`, { params: { status } });
-  } catch (error) {
-    throw error;
-  }
+// الخريطة بين النصوص العربية وحالات الطلب في الـ API
+const STATUS_MAP: Record<string, string> = {
+  "قيد الانتظار": "pending",
+  "تم تعيين الكابتن": "captain_assigned",
+  "معالجة": "processing",
+  "خرج للتوصيل": "out_for_delivery",
+  "تم التوصيل": "delivered",
+  "ملغي": "cancelled",
+  "مؤجل": "delayed",
+  "مشكلة": "issue",
+  "بانتظار قبول المطعم": "waiting_restaurant_acceptance",
+  "جاهز للاستلام": "pick_up_ready",
 };
 
-export const getOrder = async (orderId: number) => {
-  try {
-    return await axios.get(`${API_URL}/orders/${orderId}`);
-  } catch (error) {
-    throw error;
-  }
-};
+const allowedStatuses: Set<string> = new Set(Object.values(STATUS_MAP));
 
-export const updateOrderStatus = async (orderId: number, newStatus: string, captainId?: number) => {
-  try {
-    return await axios.put(`${API_URL}/orders/${orderId}`, { status: newStatus, captain_id: captainId });
-  } catch (error) {
-    throw error;
-  }
-};
+function mapStatus(status?: string): string | undefined {
+  if (!status) return undefined;
+  const mapped = STATUS_MAP[status] ?? status;
+  return allowedStatuses.has(mapped) ? mapped : undefined;
+}
 
-export const assignCaptain = async (orderId: number, captainId: number) => {
-  try {
-    return await axios.put(`${API_URL}/orders/${orderId}`, { captain_id: captainId });
-  } catch (error) {
-    throw error;
-  }
-};
+export async function getOrdersByStatus(status?: string) {
+  const mapped = mapStatus(status);
+  const params = mapped ? { status: mapped } : undefined;
+  const res = await axios.get(`${API_URL}/orders`, { params });
+  return res.data;
+}
 
-export const getOrderNotes = async (orderId: number) => {
-  try {
-    return await axios.get(`${API_URL}/orders/${orderId}/notes`);
-  } catch (error) {
-    throw error;
-  }
-};
+export async function getOrder(orderId: number | string) {
+  const res = await axios.get(`${API_URL}/orders/${orderId}`);
+  return res.data;
+}
 
-export const addNote = async (orderId: number, noteText: string) => {
-  try {
-    return await axios.post(`${API_URL}/orders/${orderId}/notes`, { note_text: noteText });
-  } catch (error) {
-    throw error;
-  }
-};
-
-export const updateOrderAddress = async (orderId: number, newAddress: string) => {
-  try {
-    return await axios.patch(`${API_URL}/orders/${orderId}/address`, { new_address: newAddress });
-  } catch (error) {
-    throw error;
-  }
-};
-
-// تجهيز لجلب عدة حالات دفعة واحدة مستقبلاً
-export const getOrdersByStatuses = async (statuses: string[]) => {
-  try {
-    return await axios.get(`${API_URL}/orders/`, { params: { status: statuses.join(',') } });
-  } catch (error) {
-    throw error;
-  }
-}; 
+export async function updateOrderStatus(
+  orderId: number | string,
+  newStatus: string,
+  captainId?: number
+) {
+  const mapped = mapStatus(newStatus) ?? newStatus;
+  const res = await axios.put(`${API_URL}/orders/${orderId}`, {
+    status: mapped,
+    captain_id: captainId,
+  });
+  return res.data;
+}

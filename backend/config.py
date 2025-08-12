@@ -4,6 +4,7 @@ Configuration settings for MOVO delivery platform
 """
 
 from pydantic_settings import BaseSettings
+from pydantic import AliasChoices, Field
 from typing import Optional
 import os
 
@@ -14,14 +15,19 @@ class Settings(BaseSettings):
     # Application settings
     app_name: str = "MOVO Delivery Platform"
     version: str = "2.0.0"
-    debug: bool = True
+    debug: bool = Field(default=True, validation_alias=AliasChoices('DEBUG', 'APP_DEBUG'))
     
     # Server settings
     host: str = "0.0.0.0"
-    port: int = 8000
+    # Support both APP_PORT and PORT
+    port: int = Field(default=8000, validation_alias=AliasChoices('APP_PORT', 'PORT'))
     
     # Database settings - PostgreSQL with async support
-    database_url: str = "postgresql+asyncpg://postgres:movo2025@localhost:5432/movo_system"
+    # Read from DATABASE_URL
+    database_url: str = Field(
+        default="postgresql+asyncpg://postgres:movo2025@localhost:5432/movo_system",
+        validation_alias=AliasChoices('DATABASE_URL', 'DB_URL')
+    )
     database_pool_size: int = 20
     database_max_overflow: int = 10
     database_pool_recycle: int = 1800
@@ -39,7 +45,10 @@ class Settings(BaseSettings):
     # Monitoring settings
     enable_monitoring: bool = True
     monitoring_interval: int = 60  # seconds
-    log_level: str = "INFO"
+    log_level: str = Field(default="INFO", validation_alias=AliasChoices('LOG_LEVEL'))
+
+    # App environment (dev/stage/prod)
+    app_env: str = Field(default="dev", validation_alias=AliasChoices('APP_ENV', 'ENV', 'APP_ENVIRONMENT'))
     
     # External APIs
     weather_api_key: Optional[str] = None
@@ -61,7 +70,8 @@ class Settings(BaseSettings):
     max_file_size: int = 10 * 1024 * 1024  # 10MB
     
     class Config:
-        env_file = ".env"
+        # Ensure we read environment from backend/.env when running from project root
+        env_file = "backend/.env"
         case_sensitive = False
 
 

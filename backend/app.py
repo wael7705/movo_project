@@ -11,11 +11,11 @@ from contextlib import asynccontextmanager
 import uvicorn
 import logging
 from typing import Dict, Any
+from sqlalchemy import text
 
 from backend.config import settings
-from backend.database.database import init_db, close_db, health_check
+from backend.database.database import init_db, close_db, health_check, get_db
 from backend.api.routes import orders, captains, restaurants, customers, chat
-from backend.auth.routes import router as auth_router
 
 # Configure logging
 logging.basicConfig(
@@ -61,7 +61,7 @@ app = FastAPI(
 # Add middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,6 +105,28 @@ async def health_endpoint() -> Dict[str, Any]:
         }
 
 
+# Database ping endpoint
+@app.get("/db_ping")
+async def db_ping(db=Depends(get_db)):
+    try:
+        result = await db.execute(text("SELECT 1"))
+        return {"ok": True, "result": result.scalar_one()}
+    except Exception as e:
+        logger.error(f"DB ping failed: {e}")
+        raise HTTPException(status_code=500, detail="Database unreachable")
+
+
+# Versioned Database ping for clients that prepend the API prefix
+@app.get("/api/v1/db_ping")
+async def db_ping_v1(db=Depends(get_db)):
+    try:
+        result = await db.execute(text("SELECT 1"))
+        return {"ok": True, "result": result.scalar_one()}
+    except Exception as e:
+        logger.error(f"DB ping failed: {e}")
+        raise HTTPException(status_code=500, detail="Database unreachable")
+
+
 # Root endpoint
 @app.get("/", tags=["Root"])
 async def root() -> Dict[str, Any]:
@@ -124,7 +146,6 @@ app.include_router(captains.router, prefix="/api/v1/captains", tags=["Captains"]
 app.include_router(restaurants.router, prefix="/api/v1/restaurants", tags=["Restaurants"])
 app.include_router(customers.router, prefix="/api/v1/customers", tags=["Customers"])
 app.include_router(chat.router, prefix="/api/v1/chat", tags=["Chat"])
-app.include_router(auth_router, prefix="/api/v1/auth", tags=["Auth"])
 
 
 if __name__ == "__main__":

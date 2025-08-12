@@ -20,7 +20,6 @@ from .enums import (
 from .customers import Customer, CustomerAddress
 from .restaurants import Restaurant, RestaurantPhone, MenuItem, MenuItemOption
 from .orders import Order, OrderStageDuration, OrderDiscount
-from .order_timings import OrderTiming
 from .captains import Captain
 from .weather import WeatherLog
 from .ratings import Rating
@@ -40,7 +39,7 @@ __all__ = [
     
     # Core Models
     "Customer", "CustomerAddress", "Restaurant", "RestaurantPhone",
-    "MenuItem", "MenuItemOption", "Order", "OrderStageDuration", "OrderTiming",
+    "MenuItem", "MenuItemOption", "Order", "OrderStageDuration",
     "Captain", "WeatherLog", "Rating", "Note",
     
     # Business Models

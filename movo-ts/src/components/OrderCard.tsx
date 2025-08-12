@@ -5,7 +5,7 @@ interface OrderCardProps {
   customer_name?: string;
   restaurant_name?: string;
   payment_method?: string;
-  time_created?: string;
+  created_at?: string;
   status: string;
   vip?: boolean;
   first_order?: boolean;
@@ -39,7 +39,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
   customer_name,
   restaurant_name,
   payment_method,
-  time_created,
+  created_at,
   status,
   vip,
   first_order,
@@ -59,7 +59,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
         <div className="font-medium text-gray-800">{customer_name}</div>
         <div className="text-sm text-gray-500">{lang === 'ar' ? 'مطعم:' : 'Restaurant:'} {restaurant_name}</div>
         <div className="text-sm text-gray-500">{lang === 'ar' ? 'الدفع:' : 'Payment:'} {payment_method}</div>
-        <div className="text-sm text-gray-400">{lang === 'ar' ? 'وقت الإنشاء:' : 'Created:'} {time_created}</div>
+        <div className="text-sm text-gray-400">{lang === 'ar' ? 'وقت الإنشاء:' : 'Created:'} {created_at}</div>
       </div>
       <div className="flex gap-2 mt-2 flex-wrap">
         {vip && <span className="bg-pink-100 text-pink-600 px-2 py-1 rounded-full text-xs font-bold">VIP</span>}

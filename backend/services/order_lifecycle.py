@@ -123,23 +123,23 @@ class OrderLifecycleService:
 
         durations = await self.get_order_durations(order_id)
 
-        # Calculate processing time (time_out_for_delivery - time_created)
+        # Calculate processing time (time_out_for_delivery - created_at)
         out_for_delivery_stage = durations["stages"].get("out_for_delivery")
         processing_time = None
-        if out_for_delivery_stage and order.time_created:
-            processing_time = out_for_delivery_stage["start_time"] - order.time_created
+        if out_for_delivery_stage and order.created_at:
+            processing_time = out_for_delivery_stage["start_time"] - order.created_at
 
-        # Calculate total processing duration (time_delivered - time_created)
+        # Calculate total processing duration (time_delivered - created_at)
         delivered_stage = durations["stages"].get("delivered")
         total_processing_duration = None
-        if delivered_stage and order.time_created:
+        if delivered_stage and order.created_at:
             total_processing_duration = (
-                delivered_stage["start_time"] - order.time_created
+                delivered_stage["start_time"] - order.created_at
             )
 
         return {
             "order_id": order_id,
-            "time_created": order.time_created,
+            "created_at": order.created_at,
             "processing_time": processing_time,
             "total_processing_duration": total_processing_duration,
             "durations": durations,
