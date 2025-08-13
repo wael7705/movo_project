@@ -65,6 +65,15 @@ python test_new_system.py
 - geopy, folium, streamlit-folium (geo/maps)
 - كل التعديلات موثقة وسيتم توفير تقرير مفصل لاحقًا حسب طلب العميل. 
 
+## FastAPI Async Migration (ملخص)
+
+- FastAPI 0.110 مع Uvicorn.
+- SQLAlchemy 2.0 async مع `asyncpg` واعتمادية `get_db` غير المتزامنة.
+- Pydantic v2 في `backend/schemas/`.
+- Alembic async مهيأ في `alembic/` و`alembic.ini`.
+- مسار عام بدون مصادقة: `/orders` يعيد `OrderCard[]`.
+- اختبارات `pytest-asyncio` ضمن `tests/`.
+
 ## تسجيل مستخدم جديد (عميل) مع OTP وعنوان
 
 1. أرسل رقم الهاتف إلى `/auth/send_otp` لاستقبال رمز التحقق (OTP)

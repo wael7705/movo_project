@@ -5,7 +5,6 @@ SQLAlchemy models for MOVO delivery platform
 
 # Import Base from database config
 from ..database.config import Base
-
 from .chat_message import ChatMessage
 
 # Import enums first
@@ -19,7 +18,9 @@ from .enums import (
 # Import all models to register them with SQLAlchemy
 from .customers import Customer, CustomerAddress
 from .restaurants import Restaurant, RestaurantPhone, MenuItem, MenuItemOption
-from .orders import Order, OrderStageDuration, OrderDiscount
+from .orders import Order # OrderDiscount
+from .order_timings import OrderTiming
+from .order_stage_duration import OrderStageDuration
 from .captains import Captain
 from .weather import WeatherLog
 from .ratings import Rating
@@ -30,6 +31,7 @@ from .call_logs import CallLog
 from .discounts import Discount
 from .ai_analytics import AIDecisionLog, AIFailure, AlertLog
 
+
 __all__ = [
     # Enums
     "MembershipTypeEnum", "RestaurantStatusEnum", "RestaurantAvailabilityEnum",
@@ -39,7 +41,7 @@ __all__ = [
     
     # Core Models
     "Customer", "CustomerAddress", "Restaurant", "RestaurantPhone",
-    "MenuItem", "MenuItemOption", "Order", "OrderStageDuration",
+    "MenuItem", "MenuItemOption", "Order", "OrderStageDuration", "OrderTiming",
     "Captain", "WeatherLog", "Rating", "Note",
     
     # Business Models

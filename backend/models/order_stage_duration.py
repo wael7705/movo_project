@@ -9,7 +9,7 @@ from ..database.config import Base
 
 
 class OrderStageDuration(Base):
-    tablename = "order_stage_durations"
+    __tablename__ = "order_stage_durations"
 
     stage_duration_id = Column(Integer, primary_key=True, index=True)
     order_id = Column(Integer, ForeignKey("orders.order_id", ondelete="CASCADE"), index=True)

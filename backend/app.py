@@ -16,6 +16,7 @@ from sqlalchemy import text
 from backend.config import settings
 from backend.database.database import init_db, close_db, health_check, get_db
 from backend.api.routes import orders, captains, restaurants, customers, chat
+from backend.api.routes import public_orders
 
 # Configure logging
 logging.basicConfig(
@@ -142,6 +143,7 @@ async def root() -> Dict[str, Any]:
 
 # Include API routes
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["Orders"])
+app.include_router(public_orders.router)
 app.include_router(captains.router, prefix="/api/v1/captains", tags=["Captains"])
 app.include_router(restaurants.router, prefix="/api/v1/restaurants", tags=["Restaurants"])
 app.include_router(customers.router, prefix="/api/v1/customers", tags=["Customers"])

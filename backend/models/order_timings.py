@@ -16,4 +16,4 @@ class OrderTiming(Base):
     estimated_delivery_time = Column("estimated_delivery_time", TIMESTAMP)
 
     # Relationship
-    order = relationship("Order", back_populates="timing") 
+    order = relationship("Order", back_populates="timings")

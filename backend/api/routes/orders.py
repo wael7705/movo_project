@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSoc
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any
 from backend.database.database import get_db
-from backend.models import Order, Note
+from backend.models import Note
+from backend.models.orders import Order
 from backend.services.delivery_service import DeliveryService
 from pydantic import BaseModel
 import logging
