@@ -17,8 +17,9 @@ from .enums import (
 
 # Import all models to register them with SQLAlchemy
 from .customers import Customer, CustomerAddress
+from .user import User
 from .restaurants import Restaurant, RestaurantPhone, MenuItem, MenuItemOption
-from .orders import Order # OrderDiscount
+from .orders import Order
 from .order_timings import OrderTiming
 from .order_stage_duration import OrderStageDuration
 from .captains import Captain
@@ -42,10 +43,10 @@ __all__ = [
     # Core Models
     "Customer", "CustomerAddress", "Restaurant", "RestaurantPhone",
     "MenuItem", "MenuItemOption", "Order", "OrderStageDuration", "OrderTiming",
-    "Captain", "WeatherLog", "Rating", "Note",
+    "Captain", "WeatherLog", "Rating", "Note", "User",
     
     # Business Models
-    "Employee", "Issue", "CallLog", "Discount", "OrderDiscount",
+    "Employee", "Issue", "CallLog", "Discount",
     
     # AI & Analytics
     "AIDecisionLog", "AIFailure", "AlertLog",

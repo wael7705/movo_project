@@ -20,6 +20,7 @@ export const api = {
     notes: {
       listByOrder: (id: number | string) => fetch(`${BASE}/orders/${id}/notes`).then(toJson),
     },
+    counts: () => fetch(`${BASE}/orders/counts`).then(toJson),
   },
 };
 

@@ -5,7 +5,8 @@ from sqlalchemy import (
     Column, Integer, String, DECIMAL, Boolean, ForeignKey,
     TIMESTAMP, Interval, CheckConstraint
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, foreign
+from sqlalchemy import and_
 from sqlalchemy.sql import func
 
 from ..database.config import Base
@@ -80,5 +81,13 @@ class Order(Base):
     ai_decisions = relationship("AIDecisionLog", back_populates="order", lazy="noload")
     ai_failures = relationship("AIFailure", back_populates="order", lazy="noload")
     alerts = relationship("AlertLog", back_populates="order", lazy="noload")
-    notes = relationship("Note", back_populates="order", lazy="noload")
+    issues = relationship("Issue", back_populates="order", lazy="noload")
+    # إزالة ربط call_logs من نموذج ORM حالياً حسب رغبة الأعمال (يبقى الجدول في DB)
+    notes = relationship(
+        "Note",
+        primaryjoin="and_(Note.target_type == 'order', foreign(Note.reference_id) == Order.order_id)",
+        back_populates="order",
+        lazy="noload",
+        viewonly=True,
+    )
     ratings = relationship("Rating", back_populates="order", lazy="noload")

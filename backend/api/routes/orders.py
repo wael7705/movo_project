@@ -8,11 +8,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any
 from backend.database.database import get_db
 from backend.models import Note
+from backend.models.customers import Customer
+from backend.models.restaurants import Restaurant
 from backend.models.orders import Order
+from backend.models.issues import Issue
 from backend.services.delivery_service import DeliveryService
 from pydantic import BaseModel
 import logging
 from backend.models.enums import OrderStatusEnum
+from sqlalchemy import select as _select, func, and_, or_, exists
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -95,23 +100,67 @@ async def get_orders(
     try:
         from sqlalchemy import select
         query = select(Order)
-        if order_status:
-            query = query.where(Order.status == order_status)
+
+        # Normalize status string
+        normalized_status = (order_status or '').strip().lower() if order_status else None
+
+        # Build exclusive buckets to avoid duplicates across tabs
+        issue_exists = exists(_select(Issue.issue_id).where(Issue.order_id == Order.order_id))
+        is_delayed = or_(Order.is_scheduled == True, Order.scheduled_time.isnot(None))
+
+        if normalized_status:
+            if normalized_status == 'issue':
+                query = query.where(issue_exists)
+            elif normalized_status == 'delayed':
+                query = query.where(and_(is_delayed, ~issue_exists))
+            elif normalized_status in {s.value for s in OrderStatusEnum}:
+                query = query.where(and_(Order.status == normalized_status, ~is_delayed, ~issue_exists))
         query = query.offset(skip).limit(limit)
         result = await db.execute(query)
         orders = result.scalars().all()
-        return [
-            {
-                "order_id": order.order_id,
-                "customer_id": order.customer_id,
-                "restaurant_id": order.restaurant_id,
-                "status": order.status,
-                "total_price_customer": order.total_price_customer,
-                "delivery_fee": order.delivery_fee,
-                "created_at": order.created_at.isoformat() if getattr(order, 'created_at', None) else None
-            }
-            for order in orders
-        ]
+
+        # Strict partitioning: no fallback to other buckets
+
+        # Enrich with customer/restaurant names
+        customer_ids = {o.customer_id for o in orders if getattr(o, 'customer_id', None)}
+        restaurant_ids = {o.restaurant_id for o in orders if getattr(o, 'restaurant_id', None)}
+
+        customer_map = {}
+        restaurant_map = {}
+
+        if customer_ids:
+            cust_rows = await db.execute(_select(Customer.customer_id, Customer.name, Customer.phone).where(Customer.customer_id.in_(customer_ids)))
+            for cid, name, phone in cust_rows.all():
+                customer_map[cid] = {"name": name, "phone": phone}
+
+        if restaurant_ids:
+            rest_rows = await db.execute(_select(Restaurant.restaurant_id, Restaurant.name).where(Restaurant.restaurant_id.in_(restaurant_ids)))
+            for rid, name in rest_rows.all():
+                restaurant_map[rid] = name
+
+        items: List[Dict[str, Any]] = []
+        for o in orders:
+            # Override status for derived buckets so the UI can partition strictly by tab
+            status_value = getattr(o.status, "value", o.status)
+            if normalized_status in {"issue", "delayed"}:
+                status_value = normalized_status
+
+            items.append(
+                {
+                    "order_id": o.order_id,
+                    "customer_id": o.customer_id,
+                    "restaurant_id": o.restaurant_id,
+                    "customer_name": customer_map.get(o.customer_id, {}).get("name") if o.customer_id else None,
+                    "restaurant_name": restaurant_map.get(o.restaurant_id) if o.restaurant_id else None,
+                    "payment_method": getattr(o, 'payment_method', None),
+                    "status": status_value,
+                    "total_price_customer": o.total_price_customer,
+                    "delivery_fee": o.delivery_fee,
+                    "created_at": o.created_at.isoformat() if getattr(o, 'created_at', None) else None,
+                }
+            )
+
+        return items
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
@@ -122,6 +171,35 @@ async def get_orders(
             detail=str(e)
         )
 
+
+@router.get("/counts", response_model=Dict[str, int])
+async def get_order_counts(db: AsyncSession = Depends(get_db)):
+    """Return counts per status plus derived buckets (delayed, issue)."""
+    try:
+        counts: Dict[str, int] = {}
+
+        # Group by status
+        status_rows = await db.execute(_select(Order.status, func.count()).group_by(Order.status))
+        for st, cnt in status_rows.all():
+            key = getattr(st, 'value', st)
+            counts[key] = int(cnt)
+
+        # Delayed: scheduled orders
+        delayed_row = await db.execute(
+            _select(func.count()).select_from(Order).where(or_(Order.is_scheduled == True, Order.scheduled_time.isnot(None)))
+        )
+        counts['delayed'] = int(delayed_row.scalar() or 0)
+
+        # Issue: orders having at least one issue (open or any)
+        issue_row = await db.execute(
+            _select(func.count(func.distinct(Issue.order_id))).where(Issue.order_id.isnot(None))
+        )
+        counts['issue'] = int(issue_row.scalar() or 0)
+
+        return counts
+    except Exception as e:
+        logger.error(f"Error getting order counts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{order_id}", response_model=Dict[str, Any])
 async def get_order(

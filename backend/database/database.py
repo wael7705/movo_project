@@ -36,7 +36,7 @@ async def init_db():
             from backend.models import (
                 Customer, CustomerAddress, Restaurant, RestaurantPhone, 
                 MenuItem, MenuItemOption, Order, OrderStageDuration, 
-                OrderDiscount, Captain, WeatherLog, Rating, Note, 
+                Captain, WeatherLog, Rating, Note, 
                 Employee, Issue, CallLog, Discount, AIDecisionLog, 
                 AIFailure, AlertLog
             )

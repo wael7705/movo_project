@@ -4,7 +4,7 @@ Note models
 """
 
 from sqlalchemy import Column, Integer, String, ForeignKey, Text, TIMESTAMP
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, foreign
 from sqlalchemy.sql import func
 from ..database.config import Base
 from .enums import NoteTypeEnum, NoteTargetEnum
@@ -24,4 +24,9 @@ class Note(Base):
     
     # Relationships
     issue = relationship("Issue", back_populates="notes")
-    order = relationship("Order", back_populates="notes") 
+    order = relationship(
+        "Order",
+        primaryjoin="and_(Note.target_type == 'order', foreign(Note.reference_id) == Order.order_id)",
+        back_populates="notes",
+        viewonly=True,
+    )

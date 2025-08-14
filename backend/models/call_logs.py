@@ -25,8 +25,8 @@ class CallLog(Base):
     call_type = Column(String(20))  # وارد/صادر/دعم/تسويق...
     notes = Column(Text)  # ملاحظات المكالمة
     
-    # Relationships
-    order = relationship("Order", back_populates="call_logs")
+    # Relationships (مُعطلة من جهة Order حسب متطلبات الأعمال الحالية)
+    order = relationship("Order")
     customer = relationship("Customer")
     issue = relationship("Issue", back_populates="call_logs")
     employee = relationship("Employee", back_populates="call_logs") 

@@ -11,7 +11,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.database import get_db
 from backend.models.orders import Order
-from backend.schemas.order import OrderCard
+from pydantic import BaseModel, ConfigDict
+
+
+class OrderCard(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    order_id: int
+    customer_id: int | None = None
+    restaurant_id: int | None = None
+    status: str | None = None
+    total_price_customer: str | None = None
+    delivery_fee: str | None = None
+    created_at: str | None = None
 
 
 router = APIRouter()

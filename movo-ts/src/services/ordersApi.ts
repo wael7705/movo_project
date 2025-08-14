@@ -3,21 +3,30 @@ import axios from "axios";
 const API_URL: string =
   (import.meta as any)?.env?.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
 
-// الخريطة بين النصوص العربية وحالات الطلب في الـ API
+// خريطة الحالات لتطابق قيم الـ backend
 const STATUS_MAP: Record<string, string> = {
   "قيد الانتظار": "pending",
-  "تم تعيين الكابتن": "captain_assigned",
+  "تعيين كابتن": "accepted", // كان: تم تعيين الكابتن
   "معالجة": "processing",
   "خرج للتوصيل": "out_for_delivery",
   "تم التوصيل": "delivered",
   "ملغي": "cancelled",
-  "مؤجل": "delayed",
-  "مشكلة": "issue",
+  "مؤجل": "waiting_restaurant_acceptance", // لا توجد حالة delayed في الـ backend الحالي
+  "مشكلة": "processing", // لا توجد حالة issue فعلية
   "بانتظار قبول المطعم": "waiting_restaurant_acceptance",
   "جاهز للاستلام": "pick_up_ready",
 };
 
-const allowedStatuses: Set<string> = new Set(Object.values(STATUS_MAP));
+const allowedStatuses: Set<string> = new Set([
+  "pending",
+  "accepted",
+  "processing",
+  "out_for_delivery",
+  "delivered",
+  "cancelled",
+  "waiting_restaurant_acceptance",
+  "pick_up_ready",
+]);
 
 function mapStatus(status?: string): string | undefined {
   if (!status) return undefined;
@@ -27,7 +36,7 @@ function mapStatus(status?: string): string | undefined {
 
 export async function getOrdersByStatus(status?: string) {
   const mapped = mapStatus(status);
-  const params = mapped ? { status: mapped } : undefined;
+  const params = mapped ? { order_status: mapped } : undefined;
   const res = await axios.get(`${API_URL}/orders`, { params });
   return res.data;
 }

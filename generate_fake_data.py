@@ -225,6 +225,7 @@ def seed_captains(cur, conn, num_captains=10):
 
 
 from datetime import datetime, timedelta
+import json
 
 def seed_orders(cur, conn, num_orders=30):
     print("→ توليد الطلبات + الأوقات...")
@@ -292,18 +293,27 @@ def seed_orders(cur, conn, num_orders=30):
             if captain_ids:
                 captain_id = random.choice(captain_ids)
 
+        # عناصر الطلب كقائمة عناصر JSON (نضع على الأقل عنصر واحد لضمان عدم مخالفة NOT NULL و CHECK)
+        items = [
+            {
+                "item": random.choice(["Burger","Pizza","Wrap","Salad"]),
+                "qty": random.randint(1, 3),
+                "price": float(round(random.uniform(2.0, 12.0), 2)),
+            }
+        ]
+
         # إدخال الطلب
         cur.execute("""
             INSERT INTO orders
                 (customer_id, restaurant_id, captain_id, status, payment_method,
                 delivery_method, created_at, is_scheduled, scheduled_time,
-                distance_meters, delivery_fee, total_price_customer, total_price_restaurant)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                distance_meters, delivery_fee, total_price_customer, total_price_restaurant, items)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING order_id, created_at
         """, (
             customer_id, restaurant_id, captain_id, status, random.choice(payment_methods),
             delivery_method, now, is_scheduled, scheduled_time,
-            distance_meters, delivery_fee, total_price_customer, total_price_restaurant
+            distance_meters, delivery_fee, total_price_customer, total_price_restaurant, json.dumps(items)
         ))
         order_id, created_at = cur.fetchone()
 
@@ -385,6 +395,132 @@ def seed_orders(cur, conn, num_orders=30):
     print("✓ تم توليد الطلبات والأوقات بنجاح")
 
 
+# ========= توليد تقييمات الطلبات (ratings) =========
+def seed_ratings(cur, conn):
+    print("→ توليد تقييمات الطلبات (ratings: orders)...")
+    # نجلب الطلبات
+    cur.execute("SELECT order_id FROM orders ORDER BY order_id")
+    order_ids = [r[0] for r in cur.fetchall()]
+
+    rows = 0
+    for oid in order_ids:
+        # 60% من الطلبات سنضيف لها تقييم
+        if random.random() < 0.6:
+            restaurant_emoji_score = random.randint(3, 5)
+            order_emoji_score = random.randint(3, 5)
+            restaurant_comment = fake.sentence(nb_words=8)
+            order_comment = fake.sentence(nb_words=10)
+
+            # تقييم مرتبط بالطلب فقط (order_id) و restaurant_id = NULL وفق القيد
+            cur.execute(
+                """
+                INSERT INTO ratings (
+                    order_id, restaurant_id,
+                    restaurant_emoji_score, order_emoji_score,
+                    restaurant_comment, order_comment
+                ) VALUES (%s, NULL, %s, %s, %s, %s)
+                """,
+                (oid, restaurant_emoji_score, order_emoji_score, restaurant_comment, order_comment),
+            )
+            rows += 1
+
+    conn.commit()
+    print(f"✓ تم إدراج {rows} تقييم/تقييمات للطلبات")
+
+
+def seed_restaurant_ratings(cur, conn):
+    print("→ توليد تقييمات للمطاعم (ratings: restaurants)...")
+    # نجلب المطاعم
+    cur.execute("SELECT restaurant_id FROM restaurants ORDER BY restaurant_id")
+    rest_ids = [r[0] for r in cur.fetchall()]
+
+    rows = 0
+    for rid in rest_ids:
+        # 70% من المطاعم سنضيف لها تقييم واحد على الأقل
+        count = random.randint(0, 2) if random.random() < 0.7 else 0
+        for _ in range(count):
+            restaurant_emoji_score = random.randint(3, 5)
+            order_emoji_score = None  # عندما نقيم المطعم، نترك تقييم الطلب فارغاً (اختياري)
+            restaurant_comment = fake.sentence(nb_words=10)
+            order_comment = None
+
+            # تقييم مرتبط بالمطعم فقط (restaurant_id) و order_id = NULL وفق القيد
+            cur.execute(
+                """
+                INSERT INTO ratings (
+                    order_id, restaurant_id,
+                    restaurant_emoji_score, order_emoji_score,
+                    restaurant_comment, order_comment
+                ) VALUES (NULL, %s, %s, %s, %s, %s)
+                """,
+                (rid, restaurant_emoji_score, order_emoji_score, restaurant_comment, order_comment),
+            )
+            rows += 1
+
+    conn.commit()
+    print(f"✓ تم إدراج {rows} تقييم/تقييمات للمطاعم")
+
+
+# ========= توليد ملاحظات على الطلبات (notes) =========
+def seed_notes(cur, conn):
+    print("→ توليد ملاحظات متنوعة (notes: orders, restaurants, captains)...")
+
+    # ملاحظات على الطلبات
+    cur.execute("SELECT order_id FROM orders ORDER BY order_id")
+    order_ids = [r[0] for r in cur.fetchall()]
+
+    rows = 0
+    for oid in order_ids:
+        count = random.randint(0, 3)
+        for _ in range(count):
+            note_text = fake.sentence(nb_words=12)
+            cur.execute(
+                """
+                INSERT INTO notes (
+                    note_type, target_type, reference_id, issue_id, note_text
+                ) VALUES ('order', 'order', %s, NULL, %s)
+                """,
+                (oid, note_text),
+            )
+            rows += 1
+
+    # ملاحظات على المطاعم
+    cur.execute("SELECT restaurant_id FROM restaurants ORDER BY restaurant_id")
+    rest_ids = [r[0] for r in cur.fetchall()]
+    for rid in rest_ids:
+        count = random.randint(0, 2)
+        for _ in range(count):
+            note_text = fake.sentence(nb_words=10)
+            cur.execute(
+                """
+                INSERT INTO notes (
+                    note_type, target_type, reference_id, issue_id, note_text
+                ) VALUES ('restaurant', 'restaurant', %s, NULL, %s)
+                """,
+                (rid, note_text),
+            )
+            rows += 1
+
+    # ملاحظات على الكباتن
+    cur.execute("SELECT captain_id FROM captains ORDER BY captain_id")
+    cap_ids = [r[0] for r in cur.fetchall()]
+    for cid in cap_ids:
+        count = random.randint(0, 2)
+        for _ in range(count):
+            note_text = fake.sentence(nb_words=10)
+            cur.execute(
+                """
+                INSERT INTO notes (
+                    note_type, target_type, reference_id, issue_id, note_text
+                ) VALUES ('captain', 'captain', %s, NULL, %s)
+                """,
+                (cid, note_text),
+            )
+            rows += 1
+
+    conn.commit()
+    print(f"✓ تم إدراج {rows} ملاحظة")
+
 # ========= التشغيل =========
 if __name__ == "__main__":
     conn = None
@@ -399,6 +535,9 @@ if __name__ == "__main__":
         seed_captains(cur, conn)
         seed_menu(cur, conn) 
         seed_orders(cur, conn, num_orders=30)
+        seed_ratings(cur, conn)
+        seed_restaurant_ratings(cur, conn)
+        seed_notes(cur, conn)
 
         print("✅ تم توليد البيانات بنجاح")
     except Exception as e:

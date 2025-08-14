@@ -34,4 +34,4 @@ class Discount(Base):
     
     # Relationships
     restaurant = relationship("Restaurant", back_populates="discounts")
-    order_discounts = relationship("OrderDiscount", back_populates="discount", cascade="all, delete-orphan") 
+    # order_discounts model not present; relationship removed

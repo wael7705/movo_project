@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
 
-from backend.models.orders import Order, OrderStageDuration
+from backend.models.orders import Order
+from backend.models.order_stage_duration import OrderStageDuration
 from backend.models.enums import OrderStatusEnum
 from backend.config import settings
 
