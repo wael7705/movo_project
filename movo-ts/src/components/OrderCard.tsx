@@ -1,4 +1,17 @@
 import React from 'react';
+import UseSafeButton from './UseSafeButton';
+
+// Icons (using simple text-based icons for now)
+const Icons = {
+  arrowRight: '→',
+  cancel: '✕',
+  receipt: '📄',
+  note: '📝',
+  bug: '🐛',
+  check: '✓',
+  location: '📍',
+  star: '⭐',
+};
 
 interface OrderCardProps {
   order_id: number;
@@ -10,6 +23,11 @@ interface OrderCardProps {
   vip?: boolean;
   first_order?: boolean;
   lang?: 'ar' | 'en';
+  onStatusChange?: (orderId: number, newStatus: string) => void;
+  onInvoice?: (orderId: number) => void;
+  onNotes?: (orderId: number) => void;
+  onTrack?: (orderId: number) => void;
+  // onRate?: (orderId: number) => void; // تم إلغاء زر التقييم
 }
 
 const statusColors: Record<string, string> = {
@@ -44,6 +62,11 @@ const OrderCard: React.FC<OrderCardProps> = ({
   vip,
   first_order,
   lang = 'ar',
+  onStatusChange,
+  onInvoice,
+  onNotes,
+  onTrack,
+  // onRate,
 }) => {
   return (
     <div
@@ -66,10 +89,126 @@ const OrderCard: React.FC<OrderCardProps> = ({
         {first_order && <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-bold">{lang === 'ar' ? 'أول طلب' : 'First Order'}</span>}
       </div>
       <div className={`flex gap-2 mt-3 flex-wrap ${lang === 'ar' ? 'justify-end' : 'justify-start'}`}> 
-        <button className="px-3 py-1 rounded bg-yellow-400 text-white font-semibold hover:bg-yellow-500 transition">{lang === 'ar' ? 'توصيل' : 'Deliver'}</button>
-        <button className="px-3 py-1 rounded bg-purple-100 text-purple-700 font-semibold hover:bg-purple-200 transition">{lang === 'ar' ? 'فاتورة' : 'Invoice'}</button>
-        <button className="px-3 py-1 rounded bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 transition">{lang === 'ar' ? 'ملاحظات' : 'Notes'}</button>
-        <button className="px-3 py-1 rounded bg-blue-100 text-blue-700 font-semibold hover:bg-blue-200 transition">{lang === 'ar' ? 'تعديل العنوان' : 'Edit Address'}</button>
+        {/* Status-specific buttons */}
+        {status === 'pending' && (
+          <>
+            <UseSafeButton onAction={() => onStatusChange?.(order_id, 'choose_captain')}>
+              <span className="px-3 py-1 rounded bg-green-600 text-white font-semibold hover:bg-green-700 transition inline-flex items-center gap-1">
+                <span>{Icons.arrowRight}</span>
+                {lang === 'ar' ? 'التالي' : 'Next'}
+              </span>
+            </UseSafeButton>
+            <UseSafeButton onAction={() => onStatusChange?.(order_id, 'cancelled')}>
+              <span className="px-3 py-1 rounded bg-red-100 text-red-700 font-semibold hover:bg-red-200 transition inline-flex items-center gap-1">
+                <span>{Icons.cancel}</span>
+                {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+              </span>
+            </UseSafeButton>
+          </>
+        )}
+
+        {status === 'choose_captain' && (
+          <>
+            <UseSafeButton onAction={() => onStatusChange?.(order_id, 'processing')}>
+              <span className="px-3 py-1 rounded bg-green-600 text-white font-semibold hover:bg-green-700 transition inline-flex items-center gap-1">
+                <span>{Icons.check}</span>
+                {lang === 'ar' ? 'تعيين' : 'Assign'}
+              </span>
+            </UseSafeButton>
+            <UseSafeButton onAction={() => onStatusChange?.(order_id, 'cancelled')}>
+              <span className="px-3 py-1 rounded bg-red-100 text-red-700 font-semibold hover:bg-red-200 transition inline-flex items-center gap-1">
+                <span>{Icons.cancel}</span>
+                {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+              </span>
+            </UseSafeButton>
+          </>
+        )}
+
+        {(status === 'processing' || status === 'waiting_approval' || status === 'preparing') && (
+          <>
+            <UseSafeButton onAction={() => {
+              if (status === 'waiting_approval') {
+                onStatusChange?.(order_id, 'preparing');
+              } else if (status === 'preparing') {
+                onStatusChange?.(order_id, 'captain_received');
+              }
+            }}>
+              <span className="px-3 py-1 rounded bg-green-600 text-white font-semibold hover:bg-green-700 transition inline-flex items-center gap-1">
+                <span>{Icons.arrowRight}</span>
+                {lang === 'ar' ? 'التالي' : 'Next'}
+              </span>
+            </UseSafeButton>
+            <UseSafeButton onAction={() => onStatusChange?.(order_id, 'cancelled')}>
+              <span className="px-3 py-1 rounded bg-red-100 text-red-700 font-semibold hover:bg-red-200 transition inline-flex items-center gap-1">
+                <span>{Icons.cancel}</span>
+                {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+              </span>
+            </UseSafeButton>
+          </>
+        )}
+
+        {status === 'out_for_delivery' && (
+          <>
+            <button 
+              className="px-3 py-1 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 transition flex items-center gap-1"
+              onClick={() => onTrack?.(order_id)}
+            >
+              <span>{Icons.location}</span>
+              {lang === 'ar' ? 'تتبع' : 'Track'}
+            </button>
+            <UseSafeButton onAction={() => onStatusChange?.(order_id, 'delivered')}>
+              <span className="px-3 py-1 rounded bg-green-600 text-white font-semibold hover:bg-green-700 transition inline-flex items-center gap-1">
+                <span>{Icons.arrowRight}</span>
+                {lang === 'ar' ? 'التالي' : 'Next'}
+              </span>
+            </UseSafeButton>
+          </>
+        )}
+
+        {/* تمت إزالة زر التقييم بطلبك */}
+
+        {/* أزرار عامة لكل الحالات */}
+        <button 
+          className="px-3 py-1 rounded bg-purple-100 text-purple-700 font-semibold hover:bg-purple-200 transition flex items-center gap-1"
+          onClick={() => onInvoice?.(order_id)}
+        >
+          <span>{Icons.receipt}</span>
+          {lang === 'ar' ? 'فاتورة' : 'Invoice'}
+        </button>
+        
+        <button 
+          className="px-3 py-1 rounded bg-gray-100 text-gray-700 font-semibold hover:bg-gray-200 transition flex items-center gap-1"
+          onClick={() => onNotes?.(order_id)}
+        >
+          <span>{Icons.note}</span>
+          {lang === 'ar' ? 'ملاحظات' : 'Notes'}
+        </button>
+
+        {/* زر اختيار كابتن ينقل الطلب إلى تبويب اختيار كابتن */}
+        <UseSafeButton onAction={() => onStatusChange?.(order_id, 'captain_assigned')}>
+          <span className="px-3 py-1 rounded bg-purple-600 text-white font-semibold hover:bg-purple-700 transition inline-flex items-center gap-1">
+            <span>{Icons.check}</span>
+            {lang === 'ar' ? 'اختيار كابتن' : 'Select Captain'}
+          </span>
+        </UseSafeButton>
+
+        {/* زر إلغاء عام */}
+        <UseSafeButton onAction={() => onStatusChange?.(order_id, 'cancelled')}>
+          <span className="px-3 py-1 rounded bg-red-600 text-white font-semibold hover:bg-red-700 transition inline-flex items-center gap-1">
+            <span>{Icons.cancel}</span>
+            {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+          </span>
+        </UseSafeButton>
+
+        {/* زر مشكلة (اختياري) لكل الحالات عدا تم التوصيل/ملغي */}
+        {!['delivered', 'cancelled'].includes(status) && (
+          <UseSafeButton onAction={() => onStatusChange?.(order_id, 'problem')}>
+            <span className="px-3 py-1 rounded bg-orange-100 text-orange-700 font-semibold hover:bg-orange-200 transition inline-flex items-center gap-1">
+              <span>{Icons.bug}</span>
+              {lang === 'ar' ? 'مشكلة' : 'Problem'}
+            </span>
+          </UseSafeButton>
+        )}
       </div>
     </div>
   );

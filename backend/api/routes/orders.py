@@ -6,22 +6,57 @@ Orders API routes with async support
 from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any
-from backend.database.database import get_db
-from backend.models import Note
-from backend.models.customers import Customer
-from backend.models.restaurants import Restaurant
-from backend.models.orders import Order
-from backend.models.issues import Issue
-from backend.services.delivery_service import DeliveryService
+from ...database.database import get_db  # استيراد نسبي لضمان العمل من الجذر
+from ...models import Note
+from ...models.customers import Customer
+from ...models.restaurants import Restaurant
+from ...models.orders import Order
+from ...models.issues import Issue
+from ...services.delivery_service import DeliveryService
 from pydantic import BaseModel
 import logging
-from backend.models.enums import OrderStatusEnum
-from sqlalchemy import select as _select, func, and_, or_, exists
+from ...models.enums import OrderStatusEnum
+from sqlalchemy import select as _select, func, or_, text as sa_text, exists
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def classify_for_tab(o: Any) -> str:
+    """Map DB status into one of the UI tabs.
+    Priority: cancelled > delayed > delivered > captain_assigned > processing > out_for_delivery > pending
+    """
+    real = getattr(o, 'status', None)
+    real = getattr(real, 'value', real)
+
+    # Cancelled always wins
+    if str(real) == 'cancelled':
+        return 'cancelled'
+
+    # Delayed from schedule flags
+    if getattr(o, 'is_scheduled', False) or getattr(o, 'scheduled_time', None) is not None:
+        return 'delayed'
+
+    # Delivered
+    if str(real) == 'delivered':
+        return 'delivered'
+
+    # Captain assigned bucket (accepted)
+    if str(real) in {'accepted', 'captain_assigned', 'choose_captain'}:
+        return 'captain_assigned'
+
+    # Out for delivery kept separate
+    if str(real) == 'out_for_delivery':
+        return 'out_for_delivery'
+
+    # Processing group
+    if str(real) in {'processing', 'waiting_approval', 'preparing', 'captain_received'}:
+        return 'processing'
+
+    # Default
+    return 'pending'
 
 
 class OrderCreate(BaseModel):
@@ -89,6 +124,8 @@ async def create_order(
 
 
 # 1. تصفية الطلبات حسب الحالة
+# دعم المسار بدون سلاش لتجنب 307 Redirect من المتصفح
+@router.get("", response_model=List[Dict[str, Any]])
 @router.get("/", response_model=List[Dict[str, Any]])
 async def get_orders(
     order_status: str = None,  # <-- غيرت الاسم هنا
@@ -99,23 +136,8 @@ async def get_orders(
     """Get all orders with optional status filter and pagination"""
     try:
         from sqlalchemy import select
-        query = select(Order)
-
-        # Normalize status string
+        query = select(Order).offset(skip).limit(limit)
         normalized_status = (order_status or '').strip().lower() if order_status else None
-
-        # Build exclusive buckets to avoid duplicates across tabs
-        issue_exists = exists(_select(Issue.issue_id).where(Issue.order_id == Order.order_id))
-        is_delayed = or_(Order.is_scheduled == True, Order.scheduled_time.isnot(None))
-
-        if normalized_status:
-            if normalized_status == 'issue':
-                query = query.where(issue_exists)
-            elif normalized_status == 'delayed':
-                query = query.where(and_(is_delayed, ~issue_exists))
-            elif normalized_status in {s.value for s in OrderStatusEnum}:
-                query = query.where(and_(Order.status == normalized_status, ~is_delayed, ~issue_exists))
-        query = query.offset(skip).limit(limit)
         result = await db.execute(query)
         orders = result.scalars().all()
 
@@ -140,11 +162,9 @@ async def get_orders(
 
         items: List[Dict[str, Any]] = []
         for o in orders:
-            # Override status for derived buckets so the UI can partition strictly by tab
-            status_value = getattr(o.status, "value", o.status)
-            if normalized_status in {"issue", "delayed"}:
-                status_value = normalized_status
-
+            label = classify_for_tab(o)
+            if normalized_status and label != normalized_status:
+                continue
             items.append(
                 {
                     "order_id": o.order_id,
@@ -153,7 +173,7 @@ async def get_orders(
                     "customer_name": customer_map.get(o.customer_id, {}).get("name") if o.customer_id else None,
                     "restaurant_name": restaurant_map.get(o.restaurant_id) if o.restaurant_id else None,
                     "payment_method": getattr(o, 'payment_method', None),
-                    "status": status_value,
+                    "status": label,
                     "total_price_customer": o.total_price_customer,
                     "delivery_fee": o.delivery_fee,
                     "created_at": o.created_at.isoformat() if getattr(o, 'created_at', None) else None,
@@ -277,6 +297,130 @@ async def update_order(
     except Exception as e:
         await db.rollback()
         logger.error(f"Error updating order: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.patch("/{order_id}", response_model=Dict[str, Any])
+async def patch_order_status(
+    order_id: int,
+    order_update: OrderUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update order status using PATCH method"""
+    try:
+        from sqlalchemy import select
+        query = select(Order).where(Order.order_id == order_id)
+        result = await db.execute(query)
+        order = result.scalar_one_or_none()
+        
+        if not order:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found"
+            )
+        
+        # Validate status
+        # تطبيع بسيط للحالات القادمة من الواجهة لتفادي تضارب الأسماء
+        normalization_map = {
+            'captain_assigned': 'accepted',
+            'choose_captain': 'accepted',
+        }
+        normalized_status = normalization_map.get(order_update.status, order_update.status)
+        try:
+            OrderStatusEnum(normalized_status)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid status: {order_update.status}"
+            )
+        
+        order.status = normalized_status
+        if order_update.captain_id:
+            order.captain_id = order_update.captain_id
+        
+        await db.commit()
+        await db.refresh(order)
+        
+        return {
+            "order_id": order.order_id,
+            "status": order.status,
+            "captain_id": order.captain_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error updating order status: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.post("/demo", response_model=Dict[str, Any])
+async def create_demo_order(db: AsyncSession = Depends(get_db)):
+    """Create a demo order for testing"""
+    try:
+        # Ensure demo Customer and Restaurant exist to satisfy FK constraints
+        # Use raw SQL to avoid ORM/DB schema mismatches on optional columns
+        cust_id = (await db.execute(sa_text("SELECT customer_id FROM customers LIMIT 1"))).scalar_one_or_none()
+        if cust_id is None:
+            cust_id = (
+                await db.execute(
+                    sa_text(
+                        """
+                        INSERT INTO customers (name, phone, membership_type)
+                        VALUES (:name, :phone, :mtype)
+                        RETURNING customer_id
+                        """
+                    ),
+                    {"name": "Demo Customer", "phone": "0500000000", "mtype": "normal"},
+                )
+            ).scalar_one()
+
+        rest_id = (await db.execute(sa_text("SELECT restaurant_id FROM restaurants LIMIT 1"))).scalar_one_or_none()
+        if rest_id is None:
+            rest_id = (
+                await db.execute(
+                    sa_text(
+                        """
+                        INSERT INTO restaurants (name, latitude, longitude, estimated_preparation_time)
+                        VALUES (:name, :lat, :lng, :prep)
+                        RETURNING restaurant_id
+                        """
+                    ),
+                    {"name": "Demo Restaurant", "lat": 24.7136, "lng": 46.6753, "prep": 15},
+                )
+            ).scalar_one()
+
+        # Create a demo order with pending status
+        demo_order = Order(
+            customer_id=int(cust_id),
+            restaurant_id=int(rest_id),
+            total_price_customer=25.00,
+            total_price_restaurant=20.00,
+            delivery_fee=5.00,
+            distance_meters=1500,
+            status=OrderStatusEnum.PENDING,
+        )
+
+        db.add(demo_order)
+        await db.commit()
+        await db.refresh(demo_order)
+
+        return {
+            "order_id": demo_order.order_id,
+            "status": getattr(demo_order.status, 'value', demo_order.status),
+            "message": "Demo order created successfully"
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error creating demo order: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)

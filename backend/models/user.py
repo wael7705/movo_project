@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum as SqlEn
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
-from backend.database.config import Base
+from ..database.config import Base
 
 class UserRole(str, enum.Enum):
     customer = "customer"

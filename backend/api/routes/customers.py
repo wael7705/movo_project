@@ -6,8 +6,8 @@ Customers API routes with async support
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any, Optional
-from backend.database.database import get_db
-from backend.models import Customer, CustomerAddress
+from ...database.database import get_db  # استيراد نسبي لضمان العمل من الجذر
+from ...models import Customer, CustomerAddress
 from pydantic import BaseModel
 import logging
 

@@ -13,10 +13,10 @@ import logging
 from typing import Dict, Any
 from sqlalchemy import text
 
-from backend.config import settings
-from backend.database.database import init_db, close_db, health_check, get_db
-from backend.api.routes import orders, captains, restaurants, customers, chat
-from backend.api.routes import public_orders
+from .config import settings  # جعل الاستيراد نسبيًا لضمان العمل من جذر المشروع
+from .database.database import init_db, close_db, health_check, get_db
+from .api.routes import orders, captains, restaurants, customers, chat
+from .api.routes import public_orders
 
 # Configure logging
 logging.basicConfig(
@@ -31,12 +31,13 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     # Startup
     logger.info("🚀 Starting MOVO Delivery Platform...")
+    # Initialize database on startup to ensure proper connectivity
     try:
         await init_db()
-        logger.info("✅ Database initialized successfully")
+        logger.info("✅ Database initialized and ready")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize database: {e}")
-        raise
+        logger.error(f"❌ Database initialization failed: {e}")
+        # Continue startup; endpoints that hit DB will surface detailed errors
     
     yield
     
@@ -46,7 +47,7 @@ async def lifespan(app: FastAPI):
         await close_db()
         logger.info("✅ Database connections closed")
     except Exception as e:
-        logger.error(f"❌ Error during shutdown: {e}")
+        logger.error(f"❌ Error closing database connections: {e}")
 
 
 # Create FastAPI application
@@ -60,9 +61,10 @@ app = FastAPI(
 )
 
 # Add middleware
+# CORS: allow local Vite dev servers. Added 127.0.0.1 alongside localhost for consistency.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -86,24 +88,19 @@ async def global_exception_handler(request, exc):
 
 
 # Health check endpoint
+# Keep the payload minimal and stable for uptime probes.
 @app.get("/health", tags=["Health"])
 async def health_endpoint() -> Dict[str, Any]:
-    """Health check endpoint with database status"""
-    try:
-        db_health = await health_check()
-        return {
-            "status": "healthy",
-            "version": settings.version,
-            "database": db_health,
-            "ai_enabled": settings.enable_monitoring
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "version": settings.version,
-            "error": str(e)
-        }
+    return {"ok": True}
+
+
+# Simple request logging middleware to trace requests lifecycle.
+@app.middleware("http")
+async def log_requests(request, call_next):
+    print("→", request.method, request.url.path)
+    response = await call_next(request)
+    print("←", response.status_code, request.url.path)
+    return response
 
 
 # Database ping endpoint

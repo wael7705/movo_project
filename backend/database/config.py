@@ -6,7 +6,7 @@ Database configuration and Base class
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import text
-from backend.config import settings
+from ..config import settings  # استيراد نسبي لضمان العمل من الجذر
 import logging
 from typing import AsyncGenerator
 

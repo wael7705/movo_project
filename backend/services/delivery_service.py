@@ -9,8 +9,8 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
-from backend.models import Order, Captain
-from backend.config import settings
+from ..models import Order, Captain
+from ..config import settings  # استيراد نسبي لضمان العمل من الجذر
 import logging
 
 logger = logging.getLogger(__name__)

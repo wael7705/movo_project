@@ -81,7 +81,7 @@ async def test_imports():
         from .database import get_db, init_db, Base
         print("✅ Database imported successfully")
         
-        from backend.services import DeliveryService
+        from .services import DeliveryService  # استيراد نسبي لضمان العمل من الجذر
         print("✅ Services imported successfully")
         
         # Test model imports
@@ -125,7 +125,7 @@ async def test_services():
     print("\n🔧 Testing services...")
     
     try:
-        from backend.services import DeliveryService
+        from .services import DeliveryService  # استيراد نسبي لضمان العمل من الجذر
         from .database import get_db
         
         # Test delivery fee calculation

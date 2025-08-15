@@ -5,7 +5,7 @@ Weather service for getting weather information
 
 import requests
 from typing import Dict, Any, Optional
-from backend.config import settings
+from ..config import settings  # استيراد نسبي لضمان العمل من الجذر
 
 
 class WeatherService:

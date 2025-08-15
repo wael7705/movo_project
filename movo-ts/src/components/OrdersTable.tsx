@@ -27,13 +27,13 @@ const formatDuration = (seconds: number) => {
     return `${m}:${s.toString().padStart(2, '0')}`;
 };
 
-const OrdersTable: React.FC<OrdersTableProps> = ({ status , orders }) => {
+const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
     // لكل طلب، عداد منفصل
     const [timers, setTimers] = useState<{[key: number]: number}>({});
 
     useEffect(() => {
         const interval = setInterval(() => {
-            setTimers(prev => {
+            setTimers(() => {
                 const updated: {[key: number]: number} = {};
                 orders.forEach((order, idx) => {
                     const created = order.createdAt ? new Date(order.createdAt) : null;

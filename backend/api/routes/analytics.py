@@ -6,8 +6,8 @@ Analytics API routes with async support
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any
-from backend.database.database import get_db
-from backend.services.delivery_service import DeliveryService
+from ...database.database import get_db  # استيراد نسبي لضمان العمل من الجذر
+from ...services.delivery_service import DeliveryService
 from pydantic import BaseModel
 import logging
 
@@ -51,7 +51,7 @@ async def get_performance_metrics(
     """Get overall system performance metrics"""
     try:
         from sqlalchemy import select, func
-        from backend.models import Order, Captain, Restaurant
+        from ...models import Order, Captain, Restaurant
         
         # Get basic counts
         result = await db.execute(select(func.count(Order.order_id)))
@@ -103,7 +103,7 @@ async def get_captain_performance(
     """Get top performing captains"""
     try:
         from sqlalchemy import select
-        from backend.models import Captain
+        from ...models import Captain
         
         query = select(Captain).order_by(
             Captain.performance.desc(),
@@ -139,7 +139,7 @@ async def get_restaurant_activity(
     """Get restaurant activity status"""
     try:
         from sqlalchemy import select, func
-        from backend.models import Restaurant, Order
+        from ...models import Restaurant, Order
         
         # Get restaurants with order counts
         query = select(

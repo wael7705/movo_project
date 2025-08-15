@@ -33,7 +33,7 @@ async def init_db():
         
         async with engine.begin() as conn:
             # Import all models to ensure they are registered with Base
-            from backend.models import (
+            from ..models import (
                 Customer, CustomerAddress, Restaurant, RestaurantPhone, 
                 MenuItem, MenuItemOption, Order, OrderStageDuration, 
                 Captain, WeatherLog, Rating, Note, 

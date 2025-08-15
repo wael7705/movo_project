@@ -6,8 +6,8 @@ Advanced chat service with AI support for MOVO delivery platform
 from typing import Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from backend.models import ChatMessage, Order
-from backend.config import settings
+from ..models import ChatMessage, Order
+from ..config import settings  # استيراد نسبي لضمان العمل من الجذر
 import logging
 
 logger = logging.getLogger(__name__)

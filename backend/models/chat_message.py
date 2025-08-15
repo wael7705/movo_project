@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, func
-from backend.database.config import Base
+from ..database.config import Base
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"

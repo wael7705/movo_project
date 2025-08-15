@@ -1,3 +1,6 @@
+# Make backend a proper Python package
+# (empty __init__ ensures relative imports work when running from project root)
+
 """
 MOVO Delivery Platform Backend
 منصة MOVO للتوصيل - الباكيند

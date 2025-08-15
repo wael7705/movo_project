@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database.database import get_db
-from backend.models.orders import Order
+from ...database.database import get_db  # استيراد نسبي لضمان العمل من الجذر
+from ...models.orders import Order
 from pydantic import BaseModel, ConfigDict
 
 
@@ -28,6 +28,7 @@ class OrderCard(BaseModel):
 router = APIRouter()
 
 
+# ملاحظة: تم الإبقاء على هذا المسار العام كما هو، واجهة الإدارة تعتمد /api/v1/orders مع current_status
 @router.get("/orders", response_model=List[OrderCard], tags=["Orders"])
 async def list_public_orders(
     skip: int = 0,

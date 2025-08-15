@@ -9,10 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
 from sqlalchemy.orm import selectinload
 
-from backend.models.orders import Order
-from backend.models.order_stage_duration import OrderStageDuration
-from backend.models.enums import OrderStatusEnum
-from backend.config import settings
+from ..models.orders import Order
+from ..models.order_stage_duration import OrderStageDuration
+from ..models.enums import OrderStatusEnum
+from ..config import settings  # استيراد نسبي لضمان العمل من الجذر
 
 
 class OrderLifecycleService:

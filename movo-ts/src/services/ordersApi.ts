@@ -1,7 +1,8 @@
 import axios from "axios";
+import { API_BASE } from "../config";
 
-const API_URL: string =
-  (import.meta as any)?.env?.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+// استخدام API_BASE الموحد بدلًا من قراءة env محليًا
+const API_URL: string = API_BASE;
 
 // خريطة الحالات لتطابق قيم الـ backend
 const STATUS_MAP: Record<string, string> = {

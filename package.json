@@ -8,6 +8,7 @@
     "dev:all": "concurrently -k \"pnpm:dev:api\" \"pnpm:dev:web\""
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.85.3",
     "axios": "^1.10.0",
     "leaflet": "^1.9.4",
     "react-leaflet": "^5.0.0"

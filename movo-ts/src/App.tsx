@@ -1,5 +1,4 @@
-import React from 'react';
-import Dashboard from './pages/Dashboard'; // واجهة لوحة التحكم الرئيسية
+
 import AdminDashboard from './pages/AdminDashboard'; // واجهة لوحة تحكم المشرف
 import './styles/tailwind.css'; // استدعاء تنسيقات Tailwind (إذا ما كنت ضايفه بعد)
 

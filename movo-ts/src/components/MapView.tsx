@@ -41,6 +41,9 @@ interface MapViewProps {
   zoom?: number;
   onClose?: () => void;
   lang?: 'ar' | 'en';
+  mode?: 'select' | 'track';
+  onCaptainSelect?: (captainId: string) => void;
+  onTrackOrder?: () => void;
 }
 
 const DEFAULT_CENTER = { lat: 33.5138, lng: 36.2765 };
@@ -54,6 +57,9 @@ const MapView: React.FC<MapViewProps> = ({
   zoom,
   onClose,
   lang = 'ar',
+  mode = 'select',
+  onCaptainSelect,
+  onTrackOrder,
 }) => {
   useEffect(() => {
     L.Marker.prototype.options.icon = DefaultIcon;
@@ -96,6 +102,22 @@ const MapView: React.FC<MapViewProps> = ({
                 <div className="font-bold text-purple-700 mb-1">{cap.name}</div>
                 <div className="text-sm text-gray-700">{lang === 'ar' ? 'عدد الطلبات:' : 'Orders:'} {cap.orders ?? 0}</div>
                 {cap.dest && <div className="text-sm text-gray-500">{lang === 'ar' ? 'الوجهة:' : 'Destination:'} {cap.dest}</div>}
+                {mode === 'select' && onCaptainSelect && (
+                  <button 
+                    className="mt-2 bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+                    onClick={() => onCaptainSelect(cap.id)}
+                  >
+                    {lang === 'ar' ? 'اختيار' : 'Select'}
+                  </button>
+                )}
+                {mode === 'track' && onTrackOrder && (
+                  <button 
+                    className="mt-2 bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                    onClick={onTrackOrder}
+                  >
+                    {lang === 'ar' ? 'تتبع' : 'Track'}
+                  </button>
+                )}
               </div>
             </Popup>
           </Marker>
