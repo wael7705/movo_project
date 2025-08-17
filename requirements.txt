@@ -4,6 +4,7 @@ fastapi==0.110.0
 uvicorn[standard]==0.29.0
 pydantic==2.7.4
 pydantic-settings==2.2.1
+loguru==0.7.2
 
 ############################################
 # Database (async PostgreSQL + migrations)

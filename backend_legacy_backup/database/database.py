@@ -43,6 +43,13 @@ async def init_db():
             
             # Create all tables
             await conn.run_sync(Base.metadata.create_all)
+
+            # Ensure required columns exist that may not be present in legacy DBs
+            # Add customers.cancelled_count if missing
+            try:
+                await conn.execute(text("ALTER TABLE IF EXISTS customers ADD COLUMN IF NOT EXISTS cancelled_count INTEGER DEFAULT 0"))
+            except Exception as e:
+                logger.warning(f"Could not ensure customers.cancelled_count column: {e}")
             
         logger.info("✅ Database initialized successfully")
         

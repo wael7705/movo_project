@@ -52,19 +52,26 @@ export default function Dashboard() {
   // Handler functions for order actions
   const handleStatusChange = async (orderId: number, newStatus: string) => {
     try {
-      await api.orders.updateStatus(orderId, newStatus);
-      if (newStatus === 'captain_assigned' || newStatus === 'choose_captain') {
-        setActiveTab('captain_assigned');
-        const data = await api.orders.list({ order_status: 'captain_assigned' });
-        setOrders(data);
-      } else if (newStatus === 'cancelled') {
+      if (newStatus === 'cancelled') {
+        await api.orders.cancel(orderId);
         setActiveTab('cancelled');
         const data = await api.orders.list({ order_status: 'cancelled' });
         setOrders(data);
-      } else {
-        const data = await api.orders.list({ order_status: activeTab });
-        setOrders(data);
+        return;
       }
+
+      // Use strict NEXT flow regardless of UI sub-stages
+      await api.orders.next(orderId);
+      const nextTabMap: Record<string, string> = {
+        pending: 'captain_assigned',
+        captain_assigned: 'processing',
+        processing: 'out_for_delivery',
+        out_for_delivery: 'delivered',
+      };
+      const nextTab = nextTabMap[activeTab] || activeTab;
+      setActiveTab(nextTab);
+      const data = await api.orders.list({ order_status: nextTab });
+      setOrders(data);
     } catch (err) {
       console.error('Failed to update order status:', err);
     }
@@ -89,7 +96,9 @@ export default function Dashboard() {
   const handleCreateDemoOrder = async () => {
     try {
       await api.orders.createDemo();
-      const data = await api.orders.list({ order_status: activeTab });
+      // بعد الإنشاء يجب أن يبدأ الطلب من pending وفق قاعدة البيانات
+      setActiveTab('pending');
+      const data = await api.orders.list({ order_status: 'pending' });
       setOrders(data);
     } catch (err) {
       console.error('Failed to create demo order:', err);
