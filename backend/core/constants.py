@@ -22,10 +22,15 @@ LIFECYCLE: list[str] = [
 ALIASES: dict[str, str] = {
 	"issue": "problem",
 	"accepted": "choose_captain",
-	"captain_assigned": "choose_captain",
+	"waiting_restaurant_acceptance": "choose_captain",
+	"preparing": "processing",
+	"pick_up_ready": "processing",
 }
 
-VALID: set[str] = {s.value if hasattr(s, 'value') else str(s) for s in OrderStatus}
+VALID: set[str] = {
+	"pending", "choose_captain", "processing", "out_for_delivery", "delivered", 
+	"cancelled", "problem"
+}
 
 
 def normalize(value: str | None) -> str | None:

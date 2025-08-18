@@ -2,6 +2,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from contextlib import asynccontextmanager
 from .config import settings
 
+# استيراد النماذج لضمان عمل النظام
+from models import Base, Customer, Restaurant, Order, Captain
 
 engine = create_async_engine(
 	settings.DATABASE_URL,
@@ -18,12 +20,17 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
+async def get_session() -> AsyncSession:
+	"""Get database session."""
+	session = AsyncSessionLocal()
+	return session
+
+
 @asynccontextmanager
-async def get_session():
+async def get_session_context():
 	session: AsyncSession = AsyncSessionLocal()
 	try:
 		yield session
-		await session.commit()
 	except Exception:
 		await session.rollback()
 		raise

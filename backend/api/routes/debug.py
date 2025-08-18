@@ -1,12 +1,17 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select as _select
-from ...core.status import compute_current_status
-from ...core.db import get_session
-from ...models.order import Order
-from ...core.db import engine
+from core.status import compute_current_status
+from core.db import AsyncSessionLocal
+from models.order import Order
+from core.db import engine
 
 router = APIRouter()
+
+
+async def get_session() -> AsyncSession:
+    """Get database session."""
+    return AsyncSessionLocal()
 
 
 def _sanitize_db_url() -> str:
@@ -22,12 +27,13 @@ def _sanitize_db_url() -> str:
 
 @router.get("/diag")
 async def debug_diag(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(_select(Order))
-    orders = result.scalars().all()
-    counts = {}
-    for o in orders:
-        cs = compute_current_status(o)
-        counts[cs] = counts.get(cs, 0) + 1
-    return {"db_url": _sanitize_db_url(), "orders_total": len(orders), "by_status": counts}
+    async with session as db_session:
+        result = await db_session.execute(_select(Order))
+        orders = result.scalars().all()
+        counts = {}
+        for o in orders:
+            cs = compute_current_status(o)
+            counts[cs] = counts.get(cs, 0) + 1
+        return {"db_url": _sanitize_db_url(), "orders_total": len(orders), "by_status": counts}
 
 

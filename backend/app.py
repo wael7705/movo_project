@@ -1,12 +1,16 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
+import traceback
 
-from .core.config import settings
-from .core.db import engine
-from backend.api.routes import orders, debug
+from core.config import settings
+from core.db import engine
+from api.routes import orders, debug, selfcheck
 
+# استيراد النماذج لضمان عمل النظام
+from models import Base, Customer, Restaurant, Order, Captain
 
 app = FastAPI()
 
@@ -24,13 +28,24 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+	logger.error(f"Global exception: {exc}")
+	logger.error(f"Traceback: {traceback.format_exc()}")
+	return JSONResponse(
+		status_code=500,
+		content={"detail": f"Internal server error: {str(exc)}"}
+	)
+
+
 @app.get("/health")
 async def health():
 	return {"ok": True}
 
 
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["orders"])
-app.include_router(debug.router, prefix="/_debug", tags=["debug"]) 
+app.include_router(debug.router, prefix="/_debug", tags=["debug"])
+app.include_router(selfcheck.router, prefix="", tags=["selfcheck"])
 
 
 @app.on_event("startup")

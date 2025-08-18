@@ -6,19 +6,19 @@ import MapView, { type Captain } from '../components/MapView';
 import api from '../lib/api';
 import { getOrdersByStatus } from '../services/ordersApi';
 
+const BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+
 const translations = {
   ar: {
     dashboardTitle: 'لوحة التحكم - الطلبات',
     tabs: [
       { title: 'قيد الانتظار', status: 'pending' },
-      { title: 'تعيين كابتن', status: 'accepted' },
+      { title: 'تعيين كابتن', status: 'choose_captain' },
       { title: 'معالجة', status: 'processing' },
-      { title: 'انتظار الموافقة', status: 'waiting_restaurant_acceptance' },
-      { title: 'مؤجل', status: 'delayed' },
       { title: 'خرج للتوصيل', status: 'out_for_delivery' },
       { title: 'تم التوصيل', status: 'delivered' },
       { title: 'ملغي', status: 'cancelled' },
-      { title: 'مشكلة', status: 'issue' },
+      { title: 'مشكلة', status: 'problem' },
     ],
     processingSubstages: [
       { key: 'waiting_approval', label: 'انتظار الموافقة' },
@@ -31,19 +31,19 @@ const translations = {
     error: 'حدث خطأ أثناء جلب الطلبات',
     showMap: 'عرض الخريطة',
     closeMap: 'إغلاق الخريطة',
+    createDemoOrder: 'إنشاء طلب وهمي',
+    createProcessingOrder: 'إنشاء طلب معالج',
   },
   en: {
     dashboardTitle: 'Orders Dashboard',
     tabs: [
       { title: 'Pending', status: 'pending' },
-      { title: 'Captain Assigned', status: 'accepted' },
+      { title: 'Captain Selection', status: 'choose_captain' },
       { title: 'Processing', status: 'processing' },
-      { title: 'Waiting Approval', status: 'waiting_restaurant_acceptance' },
-      { title: 'Delayed', status: 'delayed' },
       { title: 'Out for Delivery', status: 'out_for_delivery' },
       { title: 'Delivered', status: 'delivered' },
       { title: 'Cancelled', status: 'cancelled' },
-      { title: 'Issue', status: 'issue' },
+      { title: 'Problem', status: 'problem' },
     ],
     processingSubstages: [
       { key: 'waiting_approval', label: 'Waiting Approval' },
@@ -56,6 +56,8 @@ const translations = {
     error: 'Error fetching orders',
     showMap: 'Show Map',
     closeMap: 'Close Map',
+    createDemoOrder: 'Create Demo Order',
+    createProcessingOrder: 'Create Processing Order',
   },
 };
 
@@ -88,12 +90,52 @@ export default function Dashboard() {
 
   const visibleOrders = useMemo(() => {
     return orders.filter((o) => {
-      const st = String(o.status || '').toLowerCase();
-      if (activeTab === 'issue') return st === 'issue';
-      if (activeTab === 'delayed') return st === 'delayed';
+      const st = String(o.current_status || o.status || '').toLowerCase();
+      if (activeTab === 'problem') return st === 'problem';
+      if (activeTab === 'cancelled') return st === 'cancelled';
       return st === activeTab;
     });
   }, [orders, activeTab]);
+
+  const createDemoOrder = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${BASE}/orders/demo`, {
+        method: 'POST',
+      });
+      if (response.ok) {
+        // إعادة تحميل الطلبات
+        const data = await getOrdersByStatus(activeTab);
+        setOrders(data);
+        // تحديث العدادات
+        api.orders.counts().then((data) => setCounts(data));
+      }
+    } catch (error) {
+      console.error('Error creating demo order:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createProcessingOrder = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${BASE}/orders/demo/processing`, {
+        method: 'POST',
+      });
+      if (response.ok) {
+        // إعادة تحميل الطلبات
+        const data = await getOrdersByStatus(activeTab);
+        setOrders(data);
+        // تحديث العدادات
+        api.orders.counts().then((data) => setCounts(data));
+      }
+    } catch (error) {
+      console.error('Error creating processing order:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const dummyCaptains: Captain[] = [
     { id: 'c1', name: lang === 'ar' ? 'الكابتن أحمد' : 'Captain Ahmad', coords: { lat: 33.516, lng: 36.277 }, orders: 2, dest: lang === 'ar' ? 'مطعم باب الحارة' : 'Bab Al Hara' },
@@ -107,6 +149,25 @@ export default function Dashboard() {
       <div className="max-w-full px-4 py-8 mx-auto">
         <h1 className="text-2xl font-bold text-purple-800 mb-8">{t.dashboardTitle}</h1>
         <LanguageSwitcher currentLang={lang} onSwitch={setLang} />
+        
+        {/* أزرار إنشاء الطلبات الوهمية */}
+        <div className={`flex gap-4 mb-6 ${lang === 'ar' ? 'justify-end' : 'justify-start'}`}>
+          <button
+            onClick={createDemoOrder}
+            disabled={loading}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+          >
+            {t.createDemoOrder}
+          </button>
+          <button
+            onClick={createProcessingOrder}
+            disabled={loading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {t.createProcessingOrder}
+          </button>
+        </div>
+
         <Tabs
           tabs={t.tabs.map((section) => ({
             label: `${section.title} (${getCount(section.status)})`,
@@ -116,7 +177,8 @@ export default function Dashboard() {
           onChange={setActiveTab}
           dir={lang === 'ar' ? 'rtl' : 'ltr'}
         />
-        {activeTab === 'accepted' ? (
+        
+        {activeTab === 'choose_captain' ? (
           <>
             <MapView
               customerLocation={visibleOrders[0]?.customerLocation}
@@ -139,8 +201,30 @@ export default function Dashboard() {
           </>
         ) : activeTab === 'processing' ? (
           <div className={`w-full flex flex-col ${lang === 'ar' ? 'lg:flex-row-reverse' : 'lg:flex-row'} gap-6 mt-4`}>
+            {/* Debug info */}
+            <div className="w-full mb-4 p-4 bg-gray-100 rounded-lg">
+              <h3 className="font-bold mb-2">🔍 معلومات التصحيح:</h3>
+              <p>إجمالي الطلبات: {visibleOrders.length}</p>
+              <p>الطلبات في حالة processing: {visibleOrders.filter(o => o.current_status === 'processing').length}</p>
+              <div className="mt-2">
+                <p className="font-semibold">تفاصيل الطلبات:</p>
+                {visibleOrders.map((order, index) => (
+                  <div key={index} className="text-sm text-gray-600">
+                    الطلب #{order.order_id}: status={order.status}, current_status={order.current_status}, substage={order.substage}
+                  </div>
+                ))}
+              </div>
+            </div>
+            
             {t.processingSubstages.map((sub) => {
-              const subOrders = visibleOrders.filter((order) => order.substage === sub.key);
+              const subOrders = visibleOrders.filter((order) => {
+                // تأكد من أن الطلب في حالة processing
+                if (order.current_status !== 'processing') return false;
+                
+                // تطابق substage
+                return order.substage === sub.key;
+              });
+              
               return (
                 <div key={sub.key} className="flex-1 min-w-[260px]">
                   <div className="font-bold text-lg mb-2 flex justify-between items-center">

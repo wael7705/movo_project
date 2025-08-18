@@ -7,26 +7,24 @@ const API_URL: string = API_BASE;
 // خريطة الحالات لتطابق قيم الـ backend
 const STATUS_MAP: Record<string, string> = {
   "قيد الانتظار": "pending",
-  "تعيين كابتن": "accepted", // كان: تم تعيين الكابتن
+  "تعيين كابتن": "choose_captain",
   "معالجة": "processing",
   "خرج للتوصيل": "out_for_delivery",
   "تم التوصيل": "delivered",
   "ملغي": "cancelled",
-  "مؤجل": "waiting_restaurant_acceptance", // لا توجد حالة delayed في الـ backend الحالي
-  "مشكلة": "processing", // لا توجد حالة issue فعلية
-  "بانتظار قبول المطعم": "waiting_restaurant_acceptance",
-  "جاهز للاستلام": "pick_up_ready",
+  "مشكلة": "problem",
+  "بانتظار قبول المطعم": "choose_captain",
+  "جاهز للاستلام": "processing",
 };
 
 const allowedStatuses: Set<string> = new Set([
   "pending",
-  "accepted",
+  "choose_captain",
   "processing",
   "out_for_delivery",
   "delivered",
   "cancelled",
-  "waiting_restaurant_acceptance",
-  "pick_up_ready",
+  "problem",
 ]);
 
 function mapStatus(status?: string): string | undefined {

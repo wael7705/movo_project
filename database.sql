@@ -43,7 +43,7 @@ DROP TYPE IF EXISTS employee_role_enum CASCADE;
 CREATE TYPE membership_type_enum AS ENUM ('normal', 'vip', 'movo_plus');
 CREATE TYPE restaurant_status_enum AS ENUM ('online', 'offline');
 CREATE TYPE restaurant_availability_enum AS ENUM ('available', 'busy');
-CREATE TYPE order_status_enum AS ENUM ('pending', 'accepted', 'preparing', 'out_for_delivery', 'delivered', 'cancelled', 'processing', 'waiting_restaurant_acceptance', 'pick_up_ready');
+CREATE TYPE order_status_enum AS ENUM ('pending', 'choose_captain', 'processing', 'out_for_delivery', 'delivered', 'cancelled', 'problem');
 CREATE TYPE phone_type_enum AS ENUM ('primary', 'secondary', 'whatsapp', 'business', 'admin');
 CREATE TYPE address_type_enum AS ENUM ('home', 'work', 'other');
 CREATE TYPE note_type_enum AS ENUM ('customer', 'restaurant', 'captain', 'order', 'issue', 'call');
@@ -184,6 +184,7 @@ CREATE TABLE orders (
     delivery_method delivery_method_enum DEFAULT 'standard',
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     is_scheduled BOOLEAN DEFAULT FALSE, -- هل الطلب مجدول؟
+    is_deferred BOOLEAN DEFAULT FALSE, -- حقل مساعد لتحديد قفزة next من pending إلى processing
 	scheduled_time TIMESTAMP WITHOUT TIME ZONE, -- وقت الطلب المجدول من قبل الزبون 
     distance_meters INTEGER, -- المسافة بين المطعم والعميل
     delivery_fee NUMERIC(10,2), -- رسوم التوصيل
@@ -720,6 +721,11 @@ DECLARE
   v_new_status order_status_enum := NEW.status;
   v_new_is_scheduled BOOLEAN := COALESCE(NEW.is_scheduled, FALSE);
 BEGIN
+  -- إذا كان الطلب جديد (INSERT) ونوعه pending، نتركه كما هو
+  IF TG_OP = 'INSERT' AND NEW.status = 'pending' THEN
+    RETURN NEW;
+  END IF;
+
   -- زمن التحضير من المطعم
   IF NEW.restaurant_id IS NOT NULL THEN
     SELECT estimated_preparation_time
@@ -750,15 +756,15 @@ BEGIN
     -- الاستلام الذاتي لا يحتاج كابتن
     IF NEW.scheduled_time IS NOT NULL THEN
       IF NEW.scheduled_time - v_now > (v_prep_interval + INTERVAL '5 minutes') THEN
-        v_new_status := 'waiting_restaurant_acceptance';
+        v_new_status := 'choose_captain';
         v_new_is_scheduled := TRUE;
       ELSE
         v_new_status := 'processing';
         v_new_is_scheduled := FALSE;
       END IF;
     ELSE
-      -- بدون موعد محدد
-      v_new_status := 'processing';
+      -- بدون موعد محدد - نترك الحالة كما هي
+      v_new_status := NEW.status;
       v_new_is_scheduled := FALSE;
     END IF;
 
@@ -766,15 +772,15 @@ BEGIN
     -- توصيل عادي
     IF NEW.scheduled_time IS NOT NULL THEN
       IF NEW.scheduled_time - v_now > v_total_required THEN
-        v_new_status := 'waiting_restaurant_acceptance';
+        v_new_status := 'choose_captain';
         v_new_is_scheduled := TRUE;
       ELSE
         v_new_status := 'processing';
         v_new_is_scheduled := FALSE;
       END IF;
     ELSE
-      -- غير مجدول
-      v_new_status := 'processing';
+      -- غير مجدول - نترك الحالة كما هي
+      v_new_status := NEW.status;
       v_new_is_scheduled := FALSE;
     END IF;
   END IF;

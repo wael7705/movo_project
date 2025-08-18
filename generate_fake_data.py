@@ -248,8 +248,7 @@ def seed_orders(cur, conn, num_orders=30):
     # ===== بعض الثوابت =====
     payment_methods = ['cash', 'card', 'mobile_payment', 'online']
     delivery_methods = ['standard', 'express', 'scheduled', 'pick_up']
-    order_statuses   = ['pending','accepted','preparing','out_for_delivery','delivered',
-                        'processing','waiting_restaurant_acceptance']  # نتجنب cancelled بالبيانات الوهمية
+    order_statuses   = ['pending','choose_captain','processing','out_for_delivery','delivered']  # نتجنب cancelled بالبيانات الوهمية
 
     now = datetime.now()
 
@@ -276,6 +275,11 @@ def seed_orders(cur, conn, num_orders=30):
 
         # حالة الطلب
         status = random.choice(order_statuses)
+        
+        # تحديد current_stage_name للحالات الفرعية
+        current_stage_name = None
+        if status == 'processing':
+            current_stage_name = random.choice(['waiting_approval', 'preparing', 'captain_received'])
 
         # جدولة
         is_scheduled = False
@@ -285,11 +289,11 @@ def seed_orders(cur, conn, num_orders=30):
             # بين ساعتين و6 ساعات قدّام
             scheduled_time = now + timedelta(minutes=random.randint(120, 360))
             # نضبط حالة معقولة للطلب المجدول
-            status = random.choice(['pending','processing','waiting_restaurant_acceptance'])
+            status = random.choice(['pending','processing','choose_captain'])
 
         # الكابتن (لا نعيّنه بالـ pick_up)
         captain_id = None
-        if delivery_method != 'pick_up' and status in ['accepted','preparing','out_for_delivery','delivered']:
+        if delivery_method != 'pick_up' and status in ['choose_captain','processing','out_for_delivery','delivered']:
             if captain_ids:
                 captain_id = random.choice(captain_ids)
 
@@ -305,13 +309,13 @@ def seed_orders(cur, conn, num_orders=30):
         # إدخال الطلب
         cur.execute("""
             INSERT INTO orders
-                (customer_id, restaurant_id, captain_id, status, payment_method,
+                (customer_id, restaurant_id, captain_id, status, current_stage_name, payment_method,
                 delivery_method, created_at, is_scheduled, scheduled_time,
                 distance_meters, delivery_fee, total_price_customer, total_price_restaurant, items)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING order_id, created_at
         """, (
-            customer_id, restaurant_id, captain_id, status, random.choice(payment_methods),
+            customer_id, restaurant_id, captain_id, status, current_stage_name, random.choice(payment_methods),
             delivery_method, now, is_scheduled, scheduled_time,
             distance_meters, delivery_fee, total_price_customer, total_price_restaurant, json.dumps(items)
         ))
@@ -363,15 +367,15 @@ def seed_orders(cur, conn, num_orders=30):
         stages.append(('pending', rand_interval(20, 180)))
 
         # إذا النظام مرّ بقبول المطعم
-        if status in ['accepted','preparing','out_for_delivery','delivered','processing','waiting_restaurant_acceptance']:
-            stages.append(('accepted', rand_interval(15, 120)))
+        if status in ['choose_captain','processing','out_for_delivery','delivered']:
+            stages.append(('choose_captain', rand_interval(15, 120)))
 
         # اختيار كابتن عندما يلزم
-        if delivery_method != 'pick_up' and status in ['preparing','out_for_delivery','delivered']:
+        if delivery_method != 'pick_up' and status in ['processing','out_for_delivery','delivered']:
             stages.append(('captain_selection', rand_interval(20, 180)))
 
         # التحضير
-        if status in ['preparing','out_for_delivery','delivered']:
+        if status in ['processing','out_for_delivery','delivered']:
             # التحضير عادة قريب من المتوقع ±
             prep_low  = max(30, prep_minutes*60 - 120)
             prep_high = prep_minutes*60 + 180

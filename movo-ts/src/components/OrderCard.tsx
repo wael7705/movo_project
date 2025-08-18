@@ -20,6 +20,8 @@ interface OrderCardProps {
   payment_method?: string;
   created_at?: string;
   status: string;
+  current_status?: string;
+  substage?: string;
   vip?: boolean;
   first_order?: boolean;
   lang?: 'ar' | 'en';
@@ -27,29 +29,32 @@ interface OrderCardProps {
   onInvoice?: (orderId: number) => void;
   onNotes?: (orderId: number) => void;
   onTrack?: (orderId: number) => void;
-  // onRate?: (orderId: number) => void; // تم إلغاء زر التقييم
 }
 
 const statusColors: Record<string, string> = {
   pending: 'text-yellow-600',
+  choose_captain: 'text-purple-600',
   processing: 'text-blue-600',
   delivered: 'text-green-600',
   cancelled: 'text-red-600',
-  delayed: 'text-orange-600',
-  issue: 'text-red-500',
-  captain_assigned: 'text-purple-600',
+  problem: 'text-red-500',
   out_for_delivery: 'text-cyan-600',
 };
 
 const statusLabels: Record<string, { ar: string; en: string }> = {
   pending: { ar: 'قيد الانتظار', en: 'Pending' },
+  choose_captain: { ar: 'تعيين كابتن', en: 'Captain Selection' },
   processing: { ar: 'قيد المعالجة', en: 'Processing' },
   delivered: { ar: 'تم التوصيل', en: 'Delivered' },
   cancelled: { ar: 'ملغي', en: 'Cancelled' },
-  delayed: { ar: 'مؤجل', en: 'Delayed' },
-  issue: { ar: 'مشكلة', en: 'Issue' },
-  captain_assigned: { ar: 'تم تعيين الكابتن', en: 'Captain Assigned' },
+  problem: { ar: 'مشكلة', en: 'Problem' },
   out_for_delivery: { ar: 'خرج للتوصيل', en: 'Out for Delivery' },
+};
+
+const substageLabels: Record<string, { ar: string; en: string }> = {
+  waiting_approval: { ar: 'انتظار الموافقة', en: 'Waiting Approval' },
+  preparing: { ar: 'التحضير', en: 'Preparing' },
+  captain_received: { ar: 'الكابتن استلم', en: 'Captain Received' },
 };
 
 const OrderCard: React.FC<OrderCardProps> = ({
@@ -59,6 +64,8 @@ const OrderCard: React.FC<OrderCardProps> = ({
   payment_method,
   created_at,
   status,
+  current_status,
+  substage,
   vip,
   first_order,
   lang = 'ar',
@@ -66,8 +73,10 @@ const OrderCard: React.FC<OrderCardProps> = ({
   onInvoice,
   onNotes,
   onTrack,
-  // onRate,
 }) => {
+  // استخدام current_status إذا كان متوفراً، وإلا status
+  const displayStatus = current_status || status;
+  
   return (
     <div
       className={`bg-white rounded-xl shadow-md border p-5 mb-4 flex flex-col gap-2 transition hover:shadow-lg relative ${vip ? 'border-pink-400' : 'border-gray-200'}`}
@@ -76,7 +85,16 @@ const OrderCard: React.FC<OrderCardProps> = ({
     >
       <div className="flex justify-between items-center mb-1">
         <span className="font-bold text-lg text-purple-800">#{order_id}</span>
-        <span className={`font-semibold ${statusColors[status] || 'text-gray-500'}`}>{statusLabels[status]?.[lang] || status}</span>
+        <div className="text-right">
+          <div className={`font-semibold ${statusColors[displayStatus] || 'text-gray-500'}`}>
+            {statusLabels[displayStatus]?.[lang] || displayStatus}
+          </div>
+          {substage && displayStatus === 'processing' && (
+            <div className="text-sm text-blue-600 font-medium">
+              {substageLabels[substage]?.[lang] || substage}
+            </div>
+          )}
+        </div>
       </div>
       <div className={lang === 'ar' ? 'text-right' : 'text-left'}>
         <div className="font-medium text-gray-800">{customer_name}</div>
@@ -90,7 +108,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
       </div>
       <div className={`flex gap-2 mt-3 flex-wrap ${lang === 'ar' ? 'justify-end' : 'justify-start'}`}> 
         {/* Status-specific buttons */}
-        {status === 'pending' && (
+        {displayStatus === 'pending' && (
           <>
             <UseSafeButton onAction={() => onStatusChange?.(order_id, 'choose_captain')}>
               <span className="px-3 py-1 rounded bg-green-600 text-white font-semibold hover:bg-green-700 transition inline-flex items-center gap-1">
@@ -107,7 +125,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
           </>
         )}
 
-        {status === 'choose_captain' && (
+        {displayStatus === 'choose_captain' && (
           <>
             <UseSafeButton onAction={() => onStatusChange?.(order_id, 'processing')}>
               <span className="px-3 py-1 rounded bg-green-600 text-white font-semibold hover:bg-green-700 transition inline-flex items-center gap-1">
@@ -124,15 +142,9 @@ const OrderCard: React.FC<OrderCardProps> = ({
           </>
         )}
 
-        {(status === 'processing' || status === 'waiting_approval' || status === 'preparing') && (
+        {displayStatus === 'processing' && (
           <>
-            <UseSafeButton onAction={() => {
-              if (status === 'waiting_approval') {
-                onStatusChange?.(order_id, 'preparing');
-              } else if (status === 'preparing') {
-                onStatusChange?.(order_id, 'captain_received');
-              }
-            }}>
+            <UseSafeButton onAction={() => onStatusChange?.(order_id, 'next')}>
               <span className="px-3 py-1 rounded bg-green-600 text-white font-semibold hover:bg-green-700 transition inline-flex items-center gap-1">
                 <span>{Icons.arrowRight}</span>
                 {lang === 'ar' ? 'التالي' : 'Next'}
@@ -147,7 +159,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
           </>
         )}
 
-        {status === 'out_for_delivery' && (
+        {displayStatus === 'out_for_delivery' && (
           <>
             <button 
               className="px-3 py-1 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 transition flex items-center gap-1"
@@ -164,8 +176,6 @@ const OrderCard: React.FC<OrderCardProps> = ({
             </UseSafeButton>
           </>
         )}
-
-        {/* تمت إزالة زر التقييم بطلبك */}
 
         {/* أزرار عامة لكل الحالات */}
         <button 
@@ -184,24 +194,8 @@ const OrderCard: React.FC<OrderCardProps> = ({
           {lang === 'ar' ? 'ملاحظات' : 'Notes'}
         </button>
 
-        {/* زر اختيار كابتن ينقل الطلب إلى تبويب اختيار كابتن */}
-        <UseSafeButton onAction={() => onStatusChange?.(order_id, 'captain_assigned')}>
-          <span className="px-3 py-1 rounded bg-purple-600 text-white font-semibold hover:bg-purple-700 transition inline-flex items-center gap-1">
-            <span>{Icons.check}</span>
-            {lang === 'ar' ? 'اختيار كابتن' : 'Select Captain'}
-          </span>
-        </UseSafeButton>
-
-        {/* زر إلغاء عام */}
-        <UseSafeButton onAction={() => onStatusChange?.(order_id, 'cancelled')}>
-          <span className="px-3 py-1 rounded bg-red-600 text-white font-semibold hover:bg-red-700 transition inline-flex items-center gap-1">
-            <span>{Icons.cancel}</span>
-            {lang === 'ar' ? 'إلغاء' : 'Cancel'}
-          </span>
-        </UseSafeButton>
-
         {/* زر مشكلة (اختياري) لكل الحالات عدا تم التوصيل/ملغي */}
-        {!['delivered', 'cancelled'].includes(status) && (
+        {!['delivered', 'cancelled'].includes(displayStatus) && (
           <UseSafeButton onAction={() => onStatusChange?.(order_id, 'problem')}>
             <span className="px-3 py-1 rounded bg-orange-100 text-orange-700 font-semibold hover:bg-orange-200 transition inline-flex items-center gap-1">
               <span>{Icons.bug}</span>
