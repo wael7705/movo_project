@@ -39,6 +39,8 @@ const statusColors: Record<string, string> = {
   cancelled: 'text-red-600',
   problem: 'text-red-500',
   out_for_delivery: 'text-cyan-600',
+  deferred: 'text-orange-600',
+  pickup: 'text-purple-600',
 };
 
 const statusLabels: Record<string, { ar: string; en: string }> = {
@@ -49,6 +51,8 @@ const statusLabels: Record<string, { ar: string; en: string }> = {
   cancelled: { ar: 'ملغي', en: 'Cancelled' },
   problem: { ar: 'مشكلة', en: 'Problem' },
   out_for_delivery: { ar: 'خرج للتوصيل', en: 'Out for Delivery' },
+  deferred: { ar: 'مؤجل', en: 'Deferred' },
+  pickup: { ar: 'استلام شخصي', en: 'Pickup' },
 };
 
 const substageLabels: Record<string, { ar: string; en: string }> = {

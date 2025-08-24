@@ -34,3 +34,4 @@ def upgrade():
 def downgrade():
     # Remove the column we added
     op.execute("ALTER TABLE customers DROP COLUMN IF EXISTS cancelled_count")
+

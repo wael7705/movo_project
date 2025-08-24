@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, func
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any
+import logging
 
 from core.status import compute_current_status, compute_substage, normalize_status, VALID
 from core.db import get_session
@@ -76,6 +78,25 @@ async def list_orders(
         rows = [r for r in rows if r.get("current_status") == q]
     
     return rows
+
+
+@router.get("/counts", response_model=Dict[str, int])
+async def counts(session: AsyncSession = Depends(get_session)) -> Dict[str, int]:
+    """Return counts per normalized status for all orders.
+    Uses DB status (already normalized by enum) and fills zeros for missing keys.
+    """
+    # Get counts grouped by status directly from DB
+    result = await session.execute(
+        select(Order.status, func.count()).group_by(Order.status)
+    )
+    rows = result.all()
+
+    counts_map: Dict[str, int] = {k: 0 for k in VALID}
+    for status_val, cnt in rows:
+        if status_val in counts_map:
+            counts_map[status_val] = int(cnt)
+
+    return counts_map
 
 @router.post("/demo", response_model=Dict[str, Any])
 async def create_demo_order(session: AsyncSession = Depends(get_session)):
@@ -163,7 +184,7 @@ async def advance_order(order_id: int, session: AsyncSession = Depends(get_sessi
     current = compute_current_status(order)
     
     # Check if order is in a valid state for transition
-    if current in ['delivered', 'cancelled', 'problem']:
+    if current in ['delivered', 'cancelled', 'problem', 'deferred', 'pickup']:
         raise HTTPException(status_code=400, detail="Invalid transition")
     
     # Apply next transition - منع ازدواج "حالات نشطة"
@@ -189,6 +210,14 @@ async def advance_order(order_id: int, session: AsyncSession = Depends(get_sessi
             order.status = 'out_for_delivery'
     elif current == 'out_for_delivery':
         order.status = 'delivered'
+    elif current == 'deferred':
+        # الطلبات المؤجلة تنتقل إلى processing
+        order.status = 'processing'
+        order.current_stage_name = 'waiting_approval'
+    elif current == 'pickup':
+        # الطلبات الاستلام الشخصي تنتقل إلى processing
+        order.status = 'processing'
+        order.current_stage_name = 'waiting_approval'
     
     await session.commit()
     await session.refresh(order)
@@ -208,10 +237,16 @@ async def cancel_order(order_id: int, session: AsyncSession = Depends(get_sessio
     
     # Increment customer cancelled count
     if order.customer_id:
-        await session.execute(
-            "UPDATE customers SET cancelled_count = COALESCE(cancelled_count, 0) + 1 WHERE customer_id = :cid",
-            {"cid": order.customer_id}
-        )
+        try:
+            await session.execute(
+                sa_text(
+                    "UPDATE customers SET cancelled_count = COALESCE(cancelled_count, 0) + 1 WHERE customer_id = :cid"
+                ),
+                {"cid": order.customer_id},
+            )
+        except Exception as e:
+            # إذا كان العمود غير موجود أو حدث خطأ، نسجل فقط ولا نفشل العملية
+            logging.getLogger(__name__).warning("cancelled_count update failed: %s", e)
     
     await session.commit()
     await session.refresh(order)

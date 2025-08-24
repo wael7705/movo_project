@@ -137,16 +137,7 @@ INSERT INTO orders (customer_id, restaurant_id, captain_id, status, current_stag
 -- ========================================
 -- إدراج عناصر الطلبات
 -- ========================================
-UPDATE orders SET items = '[{"item": "برجر دجاج", "qty": 2, "price": 12.50}, {"item": "بطاطس مقلية", "qty": 1, "price": 4.00}]' WHERE order_id = 1;
-UPDATE orders SET items = '[{"item": "بيتزا مارجريتا", "qty": 1, "price": 18.00}, {"item": "سلطة سيزر", "qty": 1, "price": 12.00}]' WHERE order_id = 2;
-UPDATE orders SET items = '[{"item": "كباب لحم", "qty": 1, "price": 16.00}, {"item": "أرز باللحم", "qty": 1, "price": 18.00}]' WHERE order_id = 3;
-UPDATE orders SET items = '[{"item": "منسف لحم", "qty": 1, "price": 25.00}]' WHERE order_id = 4;
-UPDATE orders SET items = '[{"item": "فلافل", "qty": 2, "price": 6.00}, {"item": "حمص", "qty": 1, "price": 5.00}]' WHERE order_id = 5;
-UPDATE orders SET items = '[{"item": "سمك مشوي", "qty": 1, "price": 28.00}]' WHERE order_id = 6;
-UPDATE orders SET items = '[{"item": "دجاج مشوي", "qty": 1, "price": 20.00}]' WHERE order_id = 7;
-UPDATE orders SET items = '[{"item": "مشاوي متنوعة", "qty": 1, "price": 30.00}]' WHERE order_id = 8;
-UPDATE orders SET items = '[{"item": "برجر لحم", "qty": 1, "price": 15.00}, {"item": "شاورما دجاج", "qty": 1, "price": 8.00}]' WHERE order_id = 9;
-UPDATE orders SET items = '[{"item": "بيتزا بيبروني", "qty": 1, "price": 22.00}, {"item": "سلطة سيزر", "qty": 1, "price": 12.00}]' WHERE order_id = 10;
+-- تمت إزالة تحديثات حقل items لأنه غير موجود في مخطط orders الحالي
 
 -- ========================================
 -- إدراج أوقات الطلبات
@@ -210,9 +201,11 @@ INSERT INTO notes (note_type, target_type, reference_id, issue_id, note_text) VA
 -- ========================================
 -- إدراج حسومات
 -- ========================================
-INSERT INTO discounts (discount_code, discount_percentage, valid_from, valid_until, max_uses, current_uses, is_active) VALUES
-('WELCOME10', 10, NOW(), NOW() + INTERVAL '30 days', 100, 0, true),
-('NEWUSER15', 15, NOW(), NOW() + INTERVAL '60 days', 50, 0, true),
-('SPECIAL20', 20, NOW(), NOW() + INTERVAL '7 days', 25, 0, true);
+-- مثال مبسط لإضافة حسومات بما يتوافق مع مخطط discounts الحالي
+INSERT INTO discounts (name, description, discount_type, value, is_active, start_date, end_date)
+VALUES
+('WELCOME10', 'خصم ترحيبي 10%', 'percentage', 10.00, true, NOW(), NOW() + INTERVAL '30 days'),
+('NEWUSER15', 'خصم مستخدم جديد 15%', 'percentage', 15.00, true, NOW(), NOW() + INTERVAL '60 days'),
+('SPECIAL20', 'عرض خاص 20%', 'percentage', 20.00, true, NOW(), NOW() + INTERVAL '7 days');
 
 COMMIT;

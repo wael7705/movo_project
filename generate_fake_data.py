@@ -1,556 +1,429 @@
-import random
-from datetime import datetime
-from faker import Faker
-import psycopg2
+#!/usr/bin/env python3
+"""
+توليد البيانات الوهمية لنظام Movo
+"""
 
-# ========= إعدادات الاتصال =========
-DB = {
-    "dbname": "movo_system",
-    "user": "postgres",
-    "password": "movo2025",
-    "host": "localhost",
-    "port": "5432",
+import psycopg2
+import os
+from datetime import datetime, timedelta
+
+# إعدادات الاتصال - عدّل هذه القيم حسب إعداداتك
+DB_CONFIG = {
+    'dbname': 'movo_system',
+    'user': 'postgres',
+    'password': 'movo2025',
+    'host': 'localhost',
+    'port': 5432
 }
 
-fake = Faker()
-
-# ========= بارامترات التوليد =========
-NUM_CUSTOMERS = 25
-ADDRESSES_PER_CUSTOMER = (1, 2)      # من .. إلى
-NUM_RESTAURANTS = 10
-MENU_ITEMS_PER_RESTAURANT = (5, 10)  # لكل مطعم
-GROUPS_PER_ITEM = (0, 2)             # عدد مجموعات الخيارات لكل صنف
-CHOICES_PER_GROUP = (2, 4)           # خيارات داخل كل مجموعة
-SINGLE_ADDONS_PER_ITEM = (0, 2)      # إضافات منفردة (is_group=false)
-
-# ========= دوال مساعدة =========
-def get_conn_cursor():
-    conn = psycopg2.connect(**DB)
-    cur = conn.cursor()
-    return conn, cur
-
-def commit_close(conn, cur):
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def clamp_phone(p: str) -> str:
-    # قص إلى 20 محرف لتفادي أخطاء varchar(20)
-    return p.replace(" ", "")[:20]
-
-# ========= توليد العملاء + عناوينهم =========
-def seed_customers(cur, conn):
-    print("→ إدراج العملاء...")
-    for _ in range(NUM_CUSTOMERS):
-        name = fake.name()
-        phone = clamp_phone(fake.phone_number())
-        cur.execute(
-            "INSERT INTO customers (name, phone) VALUES (%s, %s)",
-            (name, phone),
-        )
-    conn.commit()
-
-    # جلب الـ IDs للربط
-    cur.execute("SELECT customer_id FROM customers ORDER BY customer_id")
-    customer_ids = [row[0] for row in cur.fetchall()]
-
-    print("→ إدراج عناوين العملاء...")
-    for cid in customer_ids:
-        count = random.randint(*ADDRESSES_PER_CUSTOMER)
-        used_types = set()
-        for i in range(count):
-            # حاول ننوّع نوع العنوان (home/work/other)
-            possible = ['home', 'work', 'other']
-            address_type = random.choice([t for t in possible if t not in used_types] or possible)
-            used_types.add(address_type)
-
-            city = fake.city()
-            street = fake.street_address()
-            district = fake.city_suffix()
-            neighborhood = fake.street_name()
-            additional_details = fake.secondary_address()
-            extra_details = fake.text(max_nb_chars=80)
-            latitude = round(random.uniform(33.45, 33.55), 8)
-            longitude = round(random.uniform(36.20, 36.35), 8)
-            is_default = (i == 0)  # أول عنوان افتراضي
-
-            cur.execute(
-                """
-                INSERT INTO customer_addresses
-                (customer_id, address_type, city, street, district, neighborhood,
-                additional_details, extra_details, latitude, longitude, is_default)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (cid, address_type, city, street, district, neighborhood,
-                additional_details, extra_details, latitude, longitude, is_default)
-            )
-    conn.commit()
-
-# ========= توليد المطاعم + أرقامها =========
-def seed_restaurants(cur, conn):
-    print("→ إدراج المطاعم...")
-    for _ in range(NUM_RESTAURANTS):
-        name = fake.company()
-        lat = round(random.uniform(33.40, 33.60), 8)
-        lon = round(random.uniform(36.20, 36.40), 8)
-        prep_time = random.randint(10, 45)  # دقائق
-        cur.execute(
-            """
-            INSERT INTO restaurants (name, latitude, longitude, estimated_preparation_time, status, availability)
-            VALUES (%s, %s, %s, %s, 'online', 'available')
-            """,
-            (name, lat, lon, prep_time),
-        )
-    conn.commit()
-
-    print("→ إدراج أرقام هواتف المطاعم...")
-def insert_restaurant_phones(cur, conn):
-    cur.execute("SELECT restaurant_id FROM restaurants ORDER BY restaurant_id")
-    rest_ids = [r[0] for r in cur.fetchall()]
-    for rid in rest_ids:
-        phone_count = random.randint(1, 3)
-
-
-        used_types = set()
-        for _ in range(phone_count):
-            phone = clamp_phone(fake.phone_number())
-            # phone_type_enum: primary, secondary, whatsapp, business, admin
-            candidates = ['primary', 'secondary', 'whatsapp', 'business']
-            phone_type = random.choice([t for t in candidates if t not in used_types] or candidates)
-            used_types.add(phone_type)
-
-            cur.execute(
-                "INSERT INTO restaurant_phones (restaurant_id, phone, phone_type) VALUES (%s, %s, %s)",
-                (rid, phone, phone_type),
-            )
-    conn.commit()
-
-# ========= توليد الأصناف + المجموعات + الخيارات =========
-def seed_menu(cur, conn):
-    print("→ إدراج الأصناف وإضافاتها...")
-    cur.execute("SELECT restaurant_id FROM restaurants ORDER BY restaurant_id")
-    rest_ids = [r[0] for r in cur.fetchall()]
-
-    for rid in rest_ids:
-        num_items = random.randint(*MENU_ITEMS_PER_RESTAURANT)
-        for _ in range(num_items):
-            name_item = fake.word().capitalize() + " " + random.choice(["Burger","Wrap","Salad","Pizza","Plate","Box"])
-            price = round(random.uniform(2.0, 15.0), 2)
-            discount = random.choice([0, 5, 10])  # %
-            is_visible = True
-
-            cur.execute(
-                """
-                INSERT INTO menu_items (restaurant_id, name_item, price, discount_percentage, is_visible)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING item_id
-                """,
-                (rid, name_item, price, discount, is_visible),
-            )
-            item_id = cur.fetchone()[0]
-
-            # مجموعات خيارات (is_group = TRUE)
-            groups_count = random.randint(*GROUPS_PER_ITEM)
-            for _g in range(groups_count):
-                group_name = random.choice(["Sauces", "Drinks", "Sides", "Cheese", "Bread"])
-                is_group = True
-                is_required = random.choice([False, False, True])  # غالباً غير إجباري
-                max_selection = random.choice([1, 1, 2])
-                price_group = 0  # للمجموعة نفسها صفر
-
-                cur.execute(
-                    """
-                    INSERT INTO menu_item_options
-                    (item_id, group_name, is_group, is_required, max_selection, price)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    RETURNING id
-                    """,
-                    (item_id, group_name, is_group, is_required, max_selection, price_group),
-                )
-                group_id = cur.fetchone()[0]
-
-                # خيارات داخل المجموعة
-                num_choices = random.randint(*CHOICES_PER_GROUP)
-                for _c in range(num_choices):
-                    choice_name = random.choice([
-                        "Ketchup", "Mayo", "Mustard", "BBQ", "Garlic", "Spicy",
-                        "Coke", "Sprite", "Water", "Fries", "Wedges", "Onion Rings",
-                        "Cheddar", "Mozzarella", "Provolone"
-                    ])
-                    choice_price = round(random.uniform(0, 3), 2)
-                    cur.execute(
-                        """
-                        INSERT INTO option_choices (group_id, choice_name, price, is_available)
-                        VALUES (%s, %s, %s, TRUE)
-                        """,
-                        (group_id, choice_name, choice_price),
-                    )
-
-            # إضافات منفردة مباشرة على الصنف (is_group = FALSE)
-            singles = random.randint(*SINGLE_ADDONS_PER_ITEM)
-            for _s in range(singles):
-                add_name = random.choice(["Extra Sauce", "Extra Cheese", "Double Meat", "Bacon", "Avocado"])
-                add_price = round(random.uniform(0.5, 4.0), 2)
-                cur.execute(
-                    """
-                    INSERT INTO menu_item_options
-                    (item_id, group_name, is_group, is_required, max_selection, price)
-                    VALUES (%s, %s, FALSE, FALSE, 1, %s)
-                    """,
-                    (item_id, add_name, add_price),
-                )
-    conn.commit()
-
-def seed_captains(cur, conn, num_captains=10):
-    print("→ توليد الكباتن...")
-    vehicles = ['motorcycle', 'car', 'bicycle']
-
-    for _ in range(num_captains):
-        name = fake.name()
-        phone = fake.msisdn()[:12]            # ي fits VARCHAR(20)
-        alt_phone = (fake.msisdn()[:12] 
-                    if random.random() < 0.5 else None)
-        vehicle_type = random.choice(vehicles)
-        performance = round(random.uniform(3.5, 5.0), 2)  # 3.5–5.00
-        available = random.choice([True, False])
-
-        cur.execute("""
-            INSERT INTO captains
-                (name, phone, alt_phone, vehicle_type, performance, available)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (name, phone, alt_phone, vehicle_type, performance, available))
-
-    conn.commit()
-    print("✓ تم توليد الكباتن بنجاح")
-
-
-from datetime import datetime, timedelta
-import json
-
-def seed_orders(cur, conn, num_orders=30):
-    print("→ توليد الطلبات + الأوقات...")
-
-    # ===== IDs موجودة مسبقاً =====
-    cur.execute("SELECT customer_id FROM customers ORDER BY customer_id")
-    customer_ids = [r[0] for r in cur.fetchall()]
-
-    cur.execute("SELECT restaurant_id, estimated_preparation_time FROM restaurants ORDER BY restaurant_id")
-    rest_rows = cur.fetchall()  # [(id, prep_minutes), ...]
-    restaurant_ids = [r[0] for r in rest_rows]
-    rest_prep_map = {rid: prep for rid, prep in rest_rows}
-
-    cur.execute("SELECT captain_id FROM captains ORDER BY captain_id")
-    captain_ids = [r[0] for r in cur.fetchall()]
-
-    if not customer_ids or not restaurant_ids:
-        raise RuntimeError("لازم يكون في عملاء ومطاعم قبل توليد الطلبات.")
-
-    # ===== بعض الثوابت =====
-    payment_methods = ['cash', 'card', 'mobile_payment', 'online']
-    delivery_methods = ['standard', 'express', 'scheduled', 'pick_up']
-    order_statuses   = ['pending','choose_captain','processing','out_for_delivery','delivered']  # نتجنب cancelled بالبيانات الوهمية
-
-    now = datetime.now()
-
-    def rand_interval(min_sec, max_sec):
-        """يرجع timedelta بالثواني ضمن مجال."""
-        sec = random.randint(min_sec, max_sec)
-        return timedelta(seconds=sec)
-
-    for _ in range(num_orders):
-        customer_id  = random.choice(customer_ids)
-        restaurant_id = random.choice(restaurant_ids)
-
-        # طريقة التوصيل
-        delivery_method = random.choice(delivery_methods)
-
-        # المسافة (متر) و أجرة التوصيل
-        distance_meters = random.randint(400, 7000) if delivery_method != 'pick_up' else 0
-        delivery_fee    = round(random.uniform(0.5, 4.5), 2) if delivery_method != 'pick_up' else 0.0
-
-        # أسعار
-        subtotal_restaurant = round(random.uniform(5, 30), 2)
-        total_price_restaurant = subtotal_restaurant
-        total_price_customer   = round(total_price_restaurant + delivery_fee, 2)
-
-        # حالة الطلب
-        status = random.choice(order_statuses)
-        
-        # تحديد current_stage_name للحالات الفرعية
-        current_stage_name = None
-        if status == 'processing':
-            current_stage_name = random.choice(['waiting_approval', 'preparing', 'captain_received'])
-
-        # جدولة
-        is_scheduled = False
-        scheduled_time = None
-        if delivery_method == 'scheduled':
-            is_scheduled = True
-            # بين ساعتين و6 ساعات قدّام
-            scheduled_time = now + timedelta(minutes=random.randint(120, 360))
-            # نضبط حالة معقولة للطلب المجدول
-            status = random.choice(['pending','processing','choose_captain'])
-
-        # الكابتن (لا نعيّنه بالـ pick_up)
-        captain_id = None
-        if delivery_method != 'pick_up' and status in ['choose_captain','processing','out_for_delivery','delivered']:
-            if captain_ids:
-                captain_id = random.choice(captain_ids)
-
-        # عناصر الطلب كقائمة عناصر JSON (نضع على الأقل عنصر واحد لضمان عدم مخالفة NOT NULL و CHECK)
-        items = [
-            {
-                "item": random.choice(["Burger","Pizza","Wrap","Salad"]),
-                "qty": random.randint(1, 3),
-                "price": float(round(random.uniform(2.0, 12.0), 2)),
-            }
-        ]
-
-        # إدخال الطلب
-        cur.execute("""
-            INSERT INTO orders
-                (customer_id, restaurant_id, captain_id, status, current_stage_name, payment_method,
-                delivery_method, created_at, is_scheduled, scheduled_time,
-                distance_meters, delivery_fee, total_price_customer, total_price_restaurant, items)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING order_id, created_at
-        """, (
-            customer_id, restaurant_id, captain_id, status, current_stage_name, random.choice(payment_methods),
-            delivery_method, now, is_scheduled, scheduled_time,
-            distance_meters, delivery_fee, total_price_customer, total_price_restaurant, json.dumps(items)
-        ))
-        order_id, created_at = cur.fetchone()
-
-        # ===== order_timings =====
-        # المتوقع للتحضير من جدول المطاعم
-        prep_minutes = rest_prep_map.get(restaurant_id, 15)
-        expected_preparation_time = timedelta(minutes=prep_minutes)
-
-        # المتوقع للتوصيل حسب المسافة ونوع التوصيل (تقريبي)
-
-        if delivery_method == 'pick_up':
-            expected_delivery_duration = timedelta(seconds=0)
-        else:
-            base = 6 * 60  # 6 دقائق بالثواني
-            per_km = 2 * 60  # دقيقتان لكل كم
-            km = distance_meters / 1000.0
-            expected_delivery_duration = timedelta(seconds=int(base + per_km * km))
-            if delivery_method == 'express':
-                # أسرع ~20%
-                expected_delivery_duration = expected_delivery_duration * 0.8
-
-        # التوقيت المتوقع للتسليم
-        if is_scheduled and scheduled_time:
-            estimated_delivery_time = scheduled_time
-        else:
-            estimated_delivery_time = created_at + expected_preparation_time + expected_delivery_duration + timedelta(minutes=6)
-
-        cur.execute("""
-            INSERT INTO order_timings
-                (order_id, expected_preparation_time, expected_delivery_duration,
-                actual_processing_time, actual_delivery_time, estimated_delivery_time)
-            VALUES (%s,%s,%s,%s,%s,%s)
-        """, (
-            order_id,
-            expected_preparation_time,
-            expected_delivery_duration,
-            None,  # actual_processing_time - ممكن نولّدها إذا بدك
-            None,  # actual_delivery_time
-            estimated_delivery_time
-        ))
-
-        # ===== order_stage_durations =====
-        # نبني مدد منطقية حسب الحالة النهائية
-        stages = []
-
-        # pending دائماً تقريباً
-        stages.append(('pending', rand_interval(20, 180)))
-
-        # إذا النظام مرّ بقبول المطعم
-        if status in ['choose_captain','processing','out_for_delivery','delivered']:
-            stages.append(('choose_captain', rand_interval(15, 120)))
-
-        # اختيار كابتن عندما يلزم
-        if delivery_method != 'pick_up' and status in ['processing','out_for_delivery','delivered']:
-            stages.append(('captain_selection', rand_interval(20, 180)))
-
-        # التحضير
-        if status in ['processing','out_for_delivery','delivered']:
-            # التحضير عادة قريب من المتوقع ±
-            prep_low  = max(30, prep_minutes*60 - 120)
-            prep_high = prep_minutes*60 + 180
-            stages.append(('preparing', rand_interval(prep_low, prep_high)))
-
-        # الخروج للتوصيل
-        if delivery_method != 'pick_up' and status in ['out_for_delivery','delivered']:
-            # التوصيل قريب من المتوقع
-            deliv_low  = max(60, int(expected_delivery_duration.total_seconds()) - 300)
-            deliv_high = int(expected_delivery_duration.total_seconds()) + 420
-            stages.append(('out_for_delivery', rand_interval(deliv_low, deliv_high)))
-
-        # إدخال المدد
-        for sname, sdur in stages:
-            cur.execute("""
-                INSERT INTO order_stage_durations (order_id, stage_name, duration)
-                VALUES (%s, %s, %s)
-            """, (order_id, sname, sdur))
-
-    conn.commit()
-    print("✓ تم توليد الطلبات والأوقات بنجاح")
-
-
-# ========= توليد تقييمات الطلبات (ratings) =========
-def seed_ratings(cur, conn):
-    print("→ توليد تقييمات الطلبات (ratings: orders)...")
-    # نجلب الطلبات
-    cur.execute("SELECT order_id FROM orders ORDER BY order_id")
-    order_ids = [r[0] for r in cur.fetchall()]
-
-    rows = 0
-    for oid in order_ids:
-        # 60% من الطلبات سنضيف لها تقييم
-        if random.random() < 0.6:
-            restaurant_emoji_score = random.randint(3, 5)
-            order_emoji_score = random.randint(3, 5)
-            restaurant_comment = fake.sentence(nb_words=8)
-            order_comment = fake.sentence(nb_words=10)
-
-            # تقييم مرتبط بالطلب فقط (order_id) و restaurant_id = NULL وفق القيد
-            cur.execute(
-                """
-                INSERT INTO ratings (
-                    order_id, restaurant_id,
-                    restaurant_emoji_score, order_emoji_score,
-                    restaurant_comment, order_comment
-                ) VALUES (%s, NULL, %s, %s, %s, %s)
-                """,
-                (oid, restaurant_emoji_score, order_emoji_score, restaurant_comment, order_comment),
-            )
-            rows += 1
-
-    conn.commit()
-    print(f"✓ تم إدراج {rows} تقييم/تقييمات للطلبات")
-
-
-def seed_restaurant_ratings(cur, conn):
-    print("→ توليد تقييمات للمطاعم (ratings: restaurants)...")
-    # نجلب المطاعم
-    cur.execute("SELECT restaurant_id FROM restaurants ORDER BY restaurant_id")
-    rest_ids = [r[0] for r in cur.fetchall()]
-
-    rows = 0
-    for rid in rest_ids:
-        # 70% من المطاعم سنضيف لها تقييم واحد على الأقل
-        count = random.randint(0, 2) if random.random() < 0.7 else 0
-        for _ in range(count):
-            restaurant_emoji_score = random.randint(3, 5)
-            order_emoji_score = None  # عندما نقيم المطعم، نترك تقييم الطلب فارغاً (اختياري)
-            restaurant_comment = fake.sentence(nb_words=10)
-            order_comment = None
-
-            # تقييم مرتبط بالمطعم فقط (restaurant_id) و order_id = NULL وفق القيد
-            cur.execute(
-                """
-                INSERT INTO ratings (
-                    order_id, restaurant_id,
-                    restaurant_emoji_score, order_emoji_score,
-                    restaurant_comment, order_comment
-                ) VALUES (NULL, %s, %s, %s, %s, %s)
-                """,
-                (rid, restaurant_emoji_score, order_emoji_score, restaurant_comment, order_comment),
-            )
-            rows += 1
-
-    conn.commit()
-    print(f"✓ تم إدراج {rows} تقييم/تقييمات للمطاعم")
-
-
-# ========= توليد ملاحظات على الطلبات (notes) =========
-def seed_notes(cur, conn):
-    print("→ توليد ملاحظات متنوعة (notes: orders, restaurants, captains)...")
-
-    # ملاحظات على الطلبات
-    cur.execute("SELECT order_id FROM orders ORDER BY order_id")
-    order_ids = [r[0] for r in cur.fetchall()]
-
-    rows = 0
-    for oid in order_ids:
-        count = random.randint(0, 3)
-        for _ in range(count):
-            note_text = fake.sentence(nb_words=12)
-            cur.execute(
-                """
-                INSERT INTO notes (
-                    note_type, target_type, reference_id, issue_id, note_text
-                ) VALUES ('order', 'order', %s, NULL, %s)
-                """,
-                (oid, note_text),
-            )
-            rows += 1
-
-    # ملاحظات على المطاعم
-    cur.execute("SELECT restaurant_id FROM restaurants ORDER BY restaurant_id")
-    rest_ids = [r[0] for r in cur.fetchall()]
-    for rid in rest_ids:
-        count = random.randint(0, 2)
-        for _ in range(count):
-            note_text = fake.sentence(nb_words=10)
-            cur.execute(
-                """
-                INSERT INTO notes (
-                    note_type, target_type, reference_id, issue_id, note_text
-                ) VALUES ('restaurant', 'restaurant', %s, NULL, %s)
-                """,
-                (rid, note_text),
-            )
-            rows += 1
-
-    # ملاحظات على الكباتن
-    cur.execute("SELECT captain_id FROM captains ORDER BY captain_id")
-    cap_ids = [r[0] for r in cur.fetchall()]
-    for cid in cap_ids:
-        count = random.randint(0, 2)
-        for _ in range(count):
-            note_text = fake.sentence(nb_words=10)
-            cur.execute(
-                """
-                INSERT INTO notes (
-                    note_type, target_type, reference_id, issue_id, note_text
-                ) VALUES ('captain', 'captain', %s, NULL, %s)
-                """,
-                (cid, note_text),
-            )
-            rows += 1
-
-    conn.commit()
-    print(f"✓ تم إدراج {rows} ملاحظة")
-
-# ========= التشغيل =========
-if __name__ == "__main__":
-    conn = None
-    cur = None
+def get_db_connection():
+    """الحصول على اتصال قاعدة البيانات"""
     try:
-        conn, cur = get_conn_cursor()
-
-        # استدعاءات التوليد بالترتيب
-        seed_customers(cur, conn)
-        seed_restaurants(cur, conn)
-        insert_restaurant_phones(cur, conn)
-        seed_captains(cur, conn)
-        seed_menu(cur, conn) 
-        seed_orders(cur, conn, num_orders=30)
-        seed_ratings(cur, conn)
-        seed_restaurant_ratings(cur, conn)
-        seed_notes(cur, conn)
-
-        print("✅ تم توليد البيانات بنجاح")
+        conn = psycopg2.connect(**DB_CONFIG)
+        return conn
     except Exception as e:
-        if conn:
-            conn.rollback()
-        print(f"❌ خطأ أثناء التوليد: {e}")
-        raise
+        print(f"❌ خطأ في الاتصال بقاعدة البيانات: {e}")
+        print("تأكد من:")
+        print("1. تشغيل PostgreSQL")
+        print("2. إنشاء قاعدة البيانات 'movo_system'")
+        print("3. صحة بيانات الاتصال")
+        return None
+
+def clear_existing_data(cursor):
+    """حذف البيانات الموجودة"""
+    print("🗑️  حذف البيانات الموجودة...")
+    
+    tables = [
+        'order_stage_durations', 'order_timings', 'ratings', 'notes',
+        'orders', 'menu_item_options', 'menu_items', 'restaurant_phones',
+        'customer_addresses', 'customers', 'restaurants', 'captains'
+    ]
+    
+    for table in tables:
+        try:
+            cursor.execute(f"DELETE FROM {table}")
+            print(f"  ✅ تم حذف {table}")
+        except Exception as e:
+            print(f"  ⚠️  {table}: {e}")
+
+def reset_sequences(cursor):
+    """إعادة تعيين التسلسلات"""
+    print("🔄 إعادة تعيين التسلسلات...")
+    
+    sequences = [
+        'customers_customer_id_seq',
+        'restaurants_restaurant_id_seq', 
+        'captains_captain_id_seq',
+        'orders_order_id_seq'
+    ]
+    
+    for seq in sequences:
+        try:
+            cursor.execute(f"ALTER SEQUENCE {seq} RESTART WITH 1")
+            print(f"  ✅ تم إعادة تعيين {seq}")
+        except Exception as e:
+            print(f"  ⚠️  {seq}: {e}")
+
+def insert_customers(cursor):
+    """إدراج العملاء"""
+    print("👥 إدراج العملاء...")
+    
+    customers = [
+        ('أحمد محمد', '+963991234567'),
+        ('فاطمة علي', '+963992345678'),
+        ('محمد حسن', '+963993456789'),
+        ('سارة أحمد', '+963994567890'),
+        ('علي محمود', '+963995678901'),
+        ('نور الدين', '+963996789012'),
+        ('ليلى كريم', '+963997890123'),
+        ('حسن عباس', '+963998901234'),
+        ('زينب محمد', '+963999012345'),
+        ('محمود أحمد', '+963990123456')
+    ]
+    
+    for name, phone in customers:
+        cursor.execute(
+            "INSERT INTO customers (name, phone) VALUES (%s, %s)",
+            (name, phone)
+        )
+    
+    print(f"  ✅ تم إدراج {len(customers)} عميل")
+
+def insert_restaurants(cursor):
+    """إدراج المطاعم"""
+    print("🍽️  إدراج المطاعم...")
+    
+    restaurants = [
+        ('مطعم باب الحارة', 33.516, 36.277, 20, 'online', 'available'),
+        ('مطعم الشام', 33.514, 36.279, 25, 'online', 'available'),
+        ('مطعم دمشق القديمة', 33.518, 36.274, 30, 'online', 'available'),
+        ('مطعم الأصالة', 33.512, 36.275, 22, 'online', 'available'),
+        ('مطعم النكهة', 33.520, 36.280, 18, 'online', 'available'),
+        ('مطعم الطعم الطيب', 33.515, 36.276, 28, 'online', 'available'),
+        ('مطعم السعادة', 33.517, 36.278, 24, 'online', 'available'),
+        ('مطعم الأمانة', 33.513, 36.273, 26, 'online', 'available')
+    ]
+    
+    for name, lat, lng, prep_time, status, availability in restaurants:
+        cursor.execute("""
+            INSERT INTO restaurants (name, latitude, longitude, estimated_preparation_time, status, availability) 
+            VALUES (%s, %s, %s, %s, %s::restaurant_status_enum, %s::restaurant_availability_enum)
+        """, (name, lat, lng, prep_time, status, availability))
+    
+    print(f"  ✅ تم إدراج {len(restaurants)} مطعم")
+
+def insert_captains(cursor):
+    """إدراج الكباتن"""
+    print("🚗 إدراج الكباتن...")
+    
+    captains = [
+        ('الكابتن أحمد', '+963991111111', '+963992222222', 'motorcycle', 4.5, True),
+        ('الكابتن سامر', '+963993333333', '+963994444444', 'car', 4.8, True),
+        ('الكابتن ليلى', '+963995555555', '+963996666666', 'motorcycle', 4.2, True),
+        ('الكابتن محمد', '+963997777777', '+963998888888', 'car', 4.6, True),
+        ('الكابتن علي', '+963999999999', '+963990000000', 'motorcycle', 4.4, True)
+    ]
+    
+    for name, phone, alt_phone, vehicle, performance, available in captains:
+        cursor.execute("""
+            INSERT INTO captains (name, phone, alt_phone, vehicle_type, performance, available) 
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (name, phone, alt_phone, vehicle, performance, available))
+    
+    print(f"  ✅ تم إدراج {len(captains)} كابتن")
+
+def insert_customer_addresses(cursor):
+    """إدراج عناوين العملاء"""
+    print("🏠 إدراج عناوين العملاء...")
+    
+    addresses = [
+        (1, 'home', 'دمشق', 'شارع الثورة', 'وسط المدينة', 'حي الصالحية', 'مبنى رقم 15', 'طابق 3', 33.516, 36.277, True),
+        (1, 'work', 'دمشق', 'شارع بغداد', 'وسط المدينة', 'حي القنوات', 'مبنى رقم 8', 'طابق 2', 33.514, 36.279, False),
+        (2, 'home', 'دمشق', 'شارع النصر', 'وسط المدينة', 'حي الميدان', 'مبنى رقم 22', 'طابق 1', 33.518, 36.274, True),
+        (3, 'home', 'دمشق', 'شارع العابد', 'وسط المدينة', 'حي باب توما', 'مبنى رقم 12', 'طابق 4', 33.512, 36.275, True),
+        (4, 'home', 'دمشق', 'شارع الملك فيصل', 'وسط المدينة', 'حي أبو رمانة', 'مبنى رقم 30', 'طابق 2', 33.520, 36.280, True),
+        (5, 'home', 'دمشق', 'شارع 29 أيار', 'وسط المدينة', 'حي القصاع', 'مبنى رقم 18', 'طابق 3', 33.515, 36.276, True),
+        (6, 'home', 'دمشق', 'شارع جمال عبد الناصر', 'وسط المدينة', 'حي المهاجرين', 'مبنى رقم 25', 'طابق 1', 33.517, 36.278, True),
+        (7, 'home', 'دمشق', 'شارع العفيف', 'وسط المدينة', 'حي ركن الدين', 'مبنى رقم 14', 'طابق 5', 33.513, 36.273, True),
+        (8, 'home', 'دمشق', 'شارع بغداد', 'وسط المدينة', 'حي القنوات', 'مبنى رقم 9', 'طابق 2', 33.516, 36.277, True),
+        (9, 'home', 'دمشق', 'شارع النصر', 'وسط المدينة', 'حي الميدان', 'مبنى رقم 33', 'طابق 3', 33.514, 36.279, True),
+        (10, 'home', 'دمشق', 'شارع العابد', 'وسط المدينة', 'حي باب توما', 'مبنى رقم 7', 'طابق 1', 33.518, 36.274, True)
+    ]
+    
+    for addr in addresses:
+        cursor.execute("""
+            INSERT INTO customer_addresses (customer_id, address_type, city, street, district, neighborhood, additional_details, extra_details, latitude, longitude, is_default) 
+            VALUES (%s, %s::address_type_enum, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, addr)
+    
+    print(f"  ✅ تم إدراج {len(addresses)} عنوان")
+
+def insert_restaurant_phones(cursor):
+    """إدراج أرقام هواتف المطاعم"""
+    print("📞 إدراج أرقام هواتف المطاعم...")
+    
+    phones = [
+        (1, '+963111111111', 'primary'),
+        (1, '+963111111112', 'whatsapp'),
+        (2, '+963222222222', 'primary'),
+        (2, '+963222222223', 'business'),
+        (3, '+963333333333', 'primary'),
+        (3, '+963333333334', 'whatsapp'),
+        (4, '+963444444444', 'primary'),
+        (5, '+963555555555', 'primary'),
+        (5, '+963555555556', 'whatsapp'),
+        (6, '+963666666666', 'primary'),
+        (7, '+963777777777', 'primary'),
+        (8, '+963888888888', 'primary')
+    ]
+    
+    for restaurant_id, phone, phone_type in phones:
+        cursor.execute("""
+            INSERT INTO restaurant_phones (restaurant_id, phone, phone_type) 
+            VALUES (%s, %s, %s::phone_type_enum)
+        """, (restaurant_id, phone, phone_type))
+    
+    print(f"  ✅ تم إدراج {len(phones)} رقم هاتف")
+
+def insert_menu_items(cursor):
+    """إدراج الأصناف"""
+    print("🍕 إدراج الأصناف...")
+    
+    items = [
+        (1, 'برجر دجاج', 12.50, 0, True),
+        (1, 'برجر لحم', 15.00, 5, True),
+        (1, 'شاورما دجاج', 8.00, 0, True),
+        (1, 'شاورما لحم', 10.00, 0, True),
+        (1, 'بطاطس مقلية', 4.00, 0, True),
+        (2, 'بيتزا مارجريتا', 18.00, 10, True),
+        (2, 'بيتزا بيبروني', 22.00, 0, True),
+        (2, 'بيتزا دجاج', 20.00, 5, True),
+        (2, 'سلطة سيزر', 12.00, 0, True),
+        (3, 'كباب لحم', 16.00, 0, True),
+        (3, 'كباب دجاج', 14.00, 0, True),
+        (3, 'أرز باللحم', 18.00, 0, True),
+        (4, 'منسف لحم', 25.00, 0, True),
+        (4, 'منسف دجاج', 22.00, 0, True),
+        (5, 'فلافل', 6.00, 0, True),
+        (5, 'حمص', 5.00, 0, True),
+        (6, 'سمك مشوي', 28.00, 15, True),
+        (6, 'جمبري مشوي', 32.00, 0, True),
+        (7, 'دجاج مشوي', 20.00, 0, True),
+        (7, 'لحم مشوي', 24.00, 0, True),
+        (8, 'مشاوي متنوعة', 30.00, 0, True)
+    ]
+    
+    for restaurant_id, name, price, discount, visible in items:
+        cursor.execute("""
+            INSERT INTO menu_items (restaurant_id, name_item, price, discount_percentage, is_visible) 
+            VALUES (%s, %s, %s, %s, %s)
+        """, (restaurant_id, name, price, discount, visible))
+    
+    print(f"  ✅ تم إدراج {len(items)} صنف")
+
+def insert_orders(cursor):
+    """إدراج الطلبات"""
+    print("📦 إدراج الطلبات...")
+    
+    now = datetime.now()
+    orders = [
+        (1, 1, None, 'pending', None, 'cash', 'standard', 25.50, 20.00, 5.50, 1500, now - timedelta(hours=2)),
+        (2, 2, None, 'pending', None, 'card', 'express', 30.00, 25.00, 5.00, 2000, now - timedelta(hours=1)),
+        (3, 3, None, 'choose_captain', None, 'mobile_payment', 'standard', 28.00, 22.00, 6.00, 1800, now - timedelta(minutes=30)),
+        (4, 4, 1, 'processing', 'waiting_approval', 'cash', 'standard', 32.00, 26.00, 6.00, 2200, now - timedelta(minutes=45)),
+        (5, 5, 2, 'processing', 'preparing', 'card', 'express', 35.00, 28.00, 7.00, 2500, now - timedelta(minutes=20)),
+        (6, 6, 3, 'processing', 'captain_received', 'mobile_payment', 'standard', 38.00, 30.00, 8.00, 2800, now - timedelta(minutes=15)),
+        (7, 7, 4, 'out_for_delivery', None, 'cash', 'standard', 42.00, 34.00, 8.00, 3000, now - timedelta(minutes=10)),
+        (8, 8, 5, 'delivered', None, 'card', 'express', 45.00, 36.00, 9.00, 3200, now - timedelta(minutes=5)),
+        (9, 1, None, 'pending', None, 'mobile_payment', 'standard', 27.50, 22.00, 5.50, 1600, now - timedelta(hours=3)),
+        (10, 2, None, 'pending', None, 'cash', 'standard', 33.00, 27.00, 6.00, 1900, now - timedelta(hours=4))
+    ]
+    
+    for order_data in orders:
+        cursor.execute("""
+            INSERT INTO orders (customer_id, restaurant_id, captain_id, status, current_stage_name, payment_method, delivery_method, total_price_customer, total_price_restaurant, delivery_fee, distance_meters, created_at) 
+            VALUES (%s, %s, %s, %s::order_status_enum, %s, %s::payment_method_enum, %s::delivery_method_enum, %s, %s, %s, %s, %s)
+        """, order_data)
+    
+    print(f"  ✅ تم إدراج {len(orders)} طلب")
+
+def insert_order_timings(cursor):
+    """إدراج أوقات الطلبات"""
+    print("⏰ إدراج أوقات الطلبات...")
+    
+    now = datetime.now()
+    timings = [
+        (1, '00:20:00', '00:15:00', None, None, now + timedelta(minutes=35)),
+        (2, '00:25:00', '00:12:00', None, None, now + timedelta(minutes=37)),
+        (3, '00:30:00', '00:18:00', None, None, now + timedelta(minutes=48)),
+        (4, '00:22:00', '00:20:00', '00:25:00', None, now + timedelta(minutes=42)),
+        (5, '00:18:00', '00:22:00', '00:20:00', None, now + timedelta(minutes=40)),
+        (6, '00:28:00', '00:25:00', '00:30:00', None, now + timedelta(minutes=53)),
+        (7, '00:24:00', '00:28:00', '00:26:00', '00:30:00', now + timedelta(minutes=54)),
+        (8, '00:26:00', '00:30:00', '00:28:00', '00:32:00', now + timedelta(minutes=58)),
+        (9, '00:20:00', '00:16:00', None, None, now + timedelta(minutes=36)),
+        (10, '00:25:00', '00:19:00', None, None, now + timedelta(minutes=44))
+    ]
+    
+    for timing_data in timings:
+        cursor.execute("""
+            INSERT INTO order_timings (order_id, expected_preparation_time, expected_delivery_duration, actual_processing_time, actual_delivery_time, estimated_delivery_time) 
+            VALUES (%s, %s::interval, %s::interval, %s::interval, %s::interval, %s)
+        """, timing_data)
+    
+    print(f"  ✅ تم إدراج {len(timings)} توقيت")
+
+def insert_stage_durations(cursor):
+    """إدراج مدة المراحل"""
+    print("📊 إدراج مدة المراحل...")
+    
+    durations = [
+        (1, 'pending', '00:05:00'),
+        (2, 'pending', '00:03:00'),
+        (3, 'pending', '00:04:00'),
+        (3, 'choose_captain', '00:02:00'),
+        (4, 'pending', '00:06:00'),
+        (4, 'choose_captain', '00:03:00'),
+        (4, 'processing', '00:25:00'),
+        (5, 'pending', '00:04:00'),
+        (5, 'choose_captain', '00:02:00'),
+        (5, 'processing', '00:20:00'),
+        (6, 'pending', '00:05:00'),
+        (6, 'choose_captain', '00:03:00'),
+        (6, 'processing', '00:30:00'),
+        (7, 'pending', '00:06:00'),
+        (7, 'choose_captain', '00:04:00'),
+        (7, 'processing', '00:26:00'),
+        (7, 'out_for_delivery', '00:30:00'),
+        (8, 'pending', '00:05:00'),
+        (8, 'choose_captain', '00:03:00'),
+        (8, 'processing', '00:28:00'),
+        (8, 'out_for_delivery', '00:32:00'),
+        (9, 'pending', '00:04:00'),
+        (10, 'pending', '00:06:00')
+    ]
+    
+    for order_id, stage_name, duration in durations:
+        cursor.execute("""
+            INSERT INTO order_stage_durations (order_id, stage_name, duration) 
+            VALUES (%s, %s, %s::interval)
+        """, (order_id, stage_name, duration))
+    
+    print(f"  ✅ تم إدراج {len(durations)} مدة مرحلة")
+
+def insert_ratings(cursor):
+    """إدراج تقييمات"""
+    print("⭐ إدراج تقييمات...")
+    
+    ratings = [
+        (8, None, 5, 5, 'مطعم ممتاز وطعام لذيذ', 'خدمة سريعة وتوصيل ممتاز'),
+        (7, None, 4, 4, 'طعام جيد وسعر معقول', 'التوصيل كان في الوقت المحدد')
+    ]
+    
+    for order_id, restaurant_id, rest_score, order_score, rest_comment, order_comment in ratings:
+        cursor.execute("""
+            INSERT INTO ratings (order_id, restaurant_id, restaurant_emoji_score, order_emoji_score, restaurant_comment, order_comment) 
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (order_id, restaurant_id, rest_score, order_score, rest_comment, order_comment))
+    
+    print(f"  ✅ تم إدراج {len(ratings)} تقييم")
+
+def insert_notes(cursor):
+    """إدراج ملاحظات"""
+    print("📝 إدراج ملاحظات...")
+    
+    notes = [
+        ('order', 'order', 1, None, 'العميل يفضل التوصيل السريع'),
+        ('order', 'order', 2, None, 'طلب خاص: إضافة صلصة إضافية'),
+        ('restaurant', 'restaurant', 1, None, 'مطعم نشط ومتعاون'),
+        ('captain', 'captain', 1, None, 'كابتن محترف وموثوق')
+    ]
+    
+    for note_type, target_type, reference_id, issue_id, note_text in notes:
+        cursor.execute("""
+            INSERT INTO notes (note_type, target_type, reference_id, issue_id, note_text) 
+            VALUES (%s::note_type_enum, %s::note_target_enum, %s, %s, %s)
+        """, (note_type, target_type, reference_id, issue_id, note_text))
+    
+    print(f"  ✅ تم إدراج {len(notes)} ملاحظة")
+
+def insert_discounts(cursor):
+    """إدراج حسومات"""
+    print("💰 إدراج حسومات...")
+    
+    now = datetime.now()
+    discounts = [
+        ('WELCOME10', 'خصم ترحيبي 10%', 'percentage', 10.00, True, now, now + timedelta(days=30)),
+        ('NEWUSER15', 'خصم مستخدم جديد 15%', 'percentage', 15.00, True, now, now + timedelta(days=60)),
+        ('SPECIAL20', 'عرض خاص 20%', 'percentage', 20.00, True, now, now + timedelta(days=7))
+    ]
+    
+    for name, description, discount_type, value, is_active, start_date, end_date in discounts:
+        cursor.execute("""
+            INSERT INTO discounts (name, description, discount_type, value, is_active, start_date, end_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (name, description, discount_type, value, is_active, start_date, end_date))
+    
+    print(f"  ✅ تم إدراج {len(discounts)} حسم")
+
+def main():
+    """الدالة الرئيسية"""
+    print("🚀 بدء توليد البيانات الوهمية لنظام Movo")
+    print("=" * 60)
+    
+    # الحصول على اتصال قاعدة البيانات
+    conn = get_db_connection()
+    if not conn:
+        return
+    
+    try:
+        cursor = conn.cursor()
+        
+        # 1. حذف البيانات الموجودة
+        clear_existing_data(cursor)
+        
+        # 2. إعادة تعيين التسلسلات
+        reset_sequences(cursor)
+        
+        # 3. إدراج البيانات الأساسية
+        insert_customers(cursor)
+        insert_restaurants(cursor)
+        insert_captains(cursor)
+        insert_customer_addresses(cursor)
+        insert_restaurant_phones(cursor)
+        insert_menu_items(cursor)
+        
+        # 4. إدراج الطلبات والبيانات المرتبطة (معلق مؤقتاً)
+        # insert_orders(cursor)
+        # insert_order_timings(cursor)
+        # insert_stage_durations(cursor)
+        
+        # 5. إدراج البيانات الإضافية (معلق مؤقتاً)
+        # insert_ratings(cursor)
+        # insert_notes(cursor)
+        # insert_discounts(cursor)
+        
+        # حفظ التغييرات
+        conn.commit()
+        
+        print("\n🎉 تم توليد البيانات الوهمية بنجاح!")
+        print("=" * 60)
+        print("✅ تم إنشاء:")
+        print("  - 10 عملاء")
+        print("  - 8 مطاعم")
+        print("  - 5 كباتن")
+        print("  - 20 صنف طعام")
+        print("  - الطلبات والحسومات معلقة لحل المشكلة")
+        print("\n⚠️  ملاحظة: تم تعليق إنشاء الطلبات والحسومات لحل مشكلة الـ trigger")
+        
+    except Exception as e:
+        print(f"❌ خطأ أثناء توليد البيانات: {e}")
+        conn.rollback()
+        import traceback
+        traceback.print_exc()
     finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
+        cursor.close()
+        conn.close()
+
+if __name__ == "__main__":
+    main()

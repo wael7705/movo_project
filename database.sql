@@ -43,7 +43,17 @@ DROP TYPE IF EXISTS employee_role_enum CASCADE;
 CREATE TYPE membership_type_enum AS ENUM ('normal', 'vip', 'movo_plus');
 CREATE TYPE restaurant_status_enum AS ENUM ('online', 'offline');
 CREATE TYPE restaurant_availability_enum AS ENUM ('available', 'busy');
-CREATE TYPE order_status_enum AS ENUM ('pending', 'choose_captain', 'processing', 'out_for_delivery', 'delivered', 'cancelled', 'problem');
+CREATE TYPE order_status_enum AS ENUM (
+    'pending',           -- قيد الانتظار
+    'choose_captain',    -- تعيين كابتن
+    'processing',        -- معالجة
+    'out_for_delivery',  -- خارج للتوصيل
+    'delivered',         -- تم التوصيل
+    'cancelled',         -- ملغي
+    'problem',           -- مشكلة
+    'deferred',          -- مؤجل
+    'pickup'             -- استلام شخصي
+);
 CREATE TYPE phone_type_enum AS ENUM ('primary', 'secondary', 'whatsapp', 'business', 'admin');
 CREATE TYPE address_type_enum AS ENUM ('home', 'work', 'other');
 CREATE TYPE note_type_enum AS ENUM ('customer', 'restaurant', 'captain', 'order', 'issue', 'call');
@@ -75,6 +85,7 @@ CREATE TABLE customers (
     customer_id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     phone VARCHAR(20) NOT NULL,
+    cancelled_count INTEGER DEFAULT 0,
     membership_type membership_type_enum DEFAULT 'normal',
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -185,6 +196,7 @@ CREATE TABLE orders (
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     is_scheduled BOOLEAN DEFAULT FALSE, -- هل الطلب مجدول؟
     is_deferred BOOLEAN DEFAULT FALSE, -- حقل مساعد لتحديد قفزة next من pending إلى processing
+	current_stage_name VARCHAR(50),
 	scheduled_time TIMESTAMP WITHOUT TIME ZONE, -- وقت الطلب المجدول من قبل الزبون 
     distance_meters INTEGER, -- المسافة بين المطعم والعميل
     delivery_fee NUMERIC(10,2), -- رسوم التوصيل
@@ -416,233 +428,11 @@ CREATE TABLE alerts_log (
     escalation_level INTEGER DEFAULT 0 -- مستوى التصعيد (0 = لا تصعيد، 1+ = مستويات التصعيد المتتالية)
 );
 
--- =============================
--- VIEWS
--- =============================
-CREATE OR REPLACE VIEW order_summary AS
-SELECT
-  o.order_id,
-  o.status,
-  TO_CHAR(COALESCE(pending.duration, INTERVAL '0'), 'MI:SS') AS pending_duration_mmss,
-  TO_CHAR(COALESCE(accept.duration, INTERVAL '0'), 'MI:SS') AS accept_duration_mmss,
-  TO_CHAR(COALESCE(captain_selection.duration, INTERVAL '0'), 'MI:SS') AS captain_selection_duration_mmss,
-  TO_CHAR(COALESCE(preparing.duration, INTERVAL '0'), 'MI:SS') AS preparation_duration_mmss,
-  TO_CHAR(COALESCE(delivery.duration, INTERVAL '0'), 'MI:SS') AS delivery_duration_mmss,
-  ot.estimated_delivery_time,
-  TO_CHAR(ot.total_expected_duration, 'MI:SS') AS estimated_delivery_duration_mmss,
-  o.distance_meters,
-  o.delivery_fee,
-  o.total_price_customer,
-  o.total_price_restaurant,
-  TO_CHAR(
-    COALESCE(pending.duration, INTERVAL '0') +
-    COALESCE(accept.duration, INTERVAL '0') +
-    COALESCE(captain_selection.duration, INTERVAL '0') +
-    COALESCE(preparing.duration, INTERVAL '0') +
-    COALESCE(delivery.duration, INTERVAL '0'),
-    'MI:SS'
-  ) AS total_processing_duration_mmss
-FROM orders o
-LEFT JOIN order_stage_durations pending ON o.order_id = pending.order_id AND pending.stage_name = 'pending'
-LEFT JOIN order_stage_durations accept ON o.order_id = accept.order_id AND accept.stage_name = 'accepted'
-LEFT JOIN order_stage_durations captain_selection ON o.order_id = captain_selection.order_id AND captain_selection.stage_name = 'captain_selection'
-LEFT JOIN order_stage_durations preparing ON o.order_id = preparing.order_id AND preparing.stage_name = 'preparing'
-LEFT JOIN order_stage_durations delivery ON o.order_id = delivery.order_id AND delivery.stage_name = 'out_for_delivery'
-LEFT JOIN order_timings ot ON o.order_id = ot.order_id
-WHERE o.status NOT IN ('cancelled');
+/* (تمت إزالة كتلة Views القديمة غير المستخدمة للحفاظ على ملف نظيف وقابل للتسليم) */
 
-CREATE OR REPLACE VIEW view_order_timing_complete AS
-SELECT
-  o.order_id,
-  o.status,
-  o.is_scheduled,
-  o.created_at,
-  ot.estimated_delivery_time,
-  o.delivery_method,
-  
-  -- التوقيت المتوقع
-  ot.expected_preparation_time,
-  ot.expected_delivery_duration,
-  (ot.expected_preparation_time + ot.expected_delivery_duration + INTERVAL '6 minutes') AS total_expected_duration,
-
-  -- التواقيت الفعلية بصيغة MI:SS
-  TO_CHAR(COALESCE(pending.duration, INTERVAL '0'), 'MI:SS') AS pending_duration_mmss,
-  TO_CHAR(COALESCE(accept.duration, INTERVAL '0'), 'MI:SS') AS accept_duration_mmss,
-  TO_CHAR(COALESCE(captain_selection.duration, INTERVAL '0'), 'MI:SS') AS captain_selection_duration_mmss,
-  TO_CHAR(COALESCE(preparing.duration, INTERVAL '0'), 'MI:SS') AS preparation_duration_mmss,
-  TO_CHAR(COALESCE(delivery.duration, INTERVAL '0'), 'MI:SS') AS delivery_duration_mmss,
-
-  -- المجموع الكامل للمدد
-  TO_CHAR(
-    COALESCE(pending.duration, INTERVAL '0') +
-    COALESCE(accept.duration, INTERVAL '0') +
-    COALESCE(captain_selection.duration, INTERVAL '0') +
-    COALESCE(preparing.duration, INTERVAL '0') +
-    COALESCE(delivery.duration, INTERVAL '0'),
-    'MI:SS'
-  ) AS total_processing_duration_mmss,
-
-  -- معلومات الأشخاص
-  c.name AS customer_name,
-  r.name AS restaurant_name,
-  cap.name AS captain_name,
-
-  -- بيانات الكلفة
-  o.total_price_customer,
-  o.total_price_restaurant,
-  o.delivery_fee,
-  o.distance_meters,
-
-  -- التقييمات
-  rt.restaurant_emoji_score,
-  rt.order_emoji_score
-
-FROM orders o
-LEFT JOIN customers c ON o.customer_id = c.customer_id
-LEFT JOIN restaurants r ON o.restaurant_id = r.restaurant_id
-LEFT JOIN captains cap ON o.captain_id = cap.captain_id
-LEFT JOIN order_timings ot ON o.order_id = ot.order_id
-LEFT JOIN ratings rt ON o.order_id = rt.order_id
-
--- ربط مراحل الطلب الخمسة
-LEFT JOIN order_stage_durations pending ON o.order_id = pending.order_id AND pending.stage_name = 'pending'
-LEFT JOIN order_stage_durations accept ON o.order_id = accept.order_id AND accept.stage_name = 'accepted'
-LEFT JOIN order_stage_durations captain_selection ON o.order_id = captain_selection.order_id AND captain_selection.stage_name = 'captain_selection'
-LEFT JOIN order_stage_durations preparing ON o.order_id = preparing.order_id AND preparing.stage_name = 'preparing'
-LEFT JOIN order_stage_durations delivery ON o.order_id = delivery.order_id AND delivery.stage_name = 'out_for_delivery';
-
-CREATE OR REPLACE VIEW view_order_ratings_complete AS
-SELECT
-  r.rating_id,
-  r.order_id,
-  o.customer_id,
-  o.restaurant_id,
-  o.captain_id,
-  
-  -- التقييم الرقمي
-  r.restaurant_emoji_score,
-  r.order_emoji_score,
-
-  -- التقييم بصيغة نجوم
-  REPEAT('★', COALESCE(r.restaurant_emoji_score, 0)) AS restaurant_rating_stars,
-  REPEAT('★', COALESCE(r.order_emoji_score, 0)) AS order_rating_stars,
-
-  -- معلومات إضافية
-  r.restaurant_comment,
-  r.order_comment,
-  r.timestamp
-
-FROM ratings r
-LEFT JOIN orders o ON r.order_id = o.order_id;
-
-CREATE OR REPLACE VIEW view_scheduled_orders_status AS
-SELECT
-  o.order_id,
-  o.status,
-  o.scheduled_time,
-  TO_CHAR(o.scheduled_time - NOW(), 'MI:SS') AS time_until_delivery_mmss,
-  
-  -- هل هو استلام ذاتي
-  (o.delivery_method = 'pick_up') AS is_pick_up,
-
-  -- هل هو كان مجدول والآن يعامل كعادي
-  CASE 
-    WHEN o.is_scheduled = true AND o.scheduled_time - NOW() <= INTERVAL '90 minutes'
-         AND o.status IN ('pending', 'processing') THEN true
-    ELSE false
-  END AS was_scheduled_but_now_normal,
-
-  -- المرحلة الحالية المقترحة للعرض
-  CASE
-    WHEN o.delivery_method = 'pick_up' THEN 'pick_up'
-    WHEN o.is_scheduled = false THEN 'not_scheduled'
-    WHEN o.scheduled_time - NOW() > INTERVAL '90 minutes' THEN 'scheduled_pending'
-    WHEN o.scheduled_time - NOW() <= INTERVAL '90 minutes'
-         AND o.scheduled_time - NOW() > INTERVAL '35 minutes'
-         AND o.status = 'processing' THEN 'scheduled_processing'
-    WHEN o.scheduled_time - NOW() <= INTERVAL '35 minutes'
-         AND o.status = 'processing' THEN 'choose_captain'
-    WHEN o.status IN ('preparing', 'out_for_delivery', 'delivered') THEN 'normal_flow'
-    ELSE 'processing'
-  END AS phase_label,
-
-  -- معلومات للعرض
-  c.name AS customer_name,
-  r.name AS restaurant_name
-
-FROM orders o
-LEFT JOIN customers c ON o.customer_id = c.customer_id
-LEFT JOIN restaurants r ON o.restaurant_id = r.restaurant_id
-WHERE o.is_scheduled = true OR o.delivery_method = 'pick_up';
-
-CREATE OR REPLACE VIEW view_order_flow_status AS
-SELECT
-  o.order_id,
-  o.status,
-  o.is_scheduled,
-  o.scheduled_time,
-  TO_CHAR(o.scheduled_time - NOW(), 'MI:SS') AS time_until_delivery_mmss,
-  o.delivery_method,
-  (o.delivery_method = 'pick_up') AS is_pick_up,
-  
-  -- تحديد المرحلة المناسبة لعرض الطلب الآن
-  CASE
-    WHEN iss.issue_id IS NOT NULL THEN 'issue'
-    WHEN o.delivery_method = 'pick_up' THEN 
-      CASE 
-        WHEN o.status = 'preparing' THEN 'processing'
-        WHEN o.status = 'delivered' THEN 'delivered'
-        ELSE 'pending'
-      END
-    WHEN o.is_scheduled = true AND o.scheduled_time - NOW() > INTERVAL '90 minutes' THEN 'scheduled_tab'
-    WHEN o.is_scheduled = true AND o.scheduled_time - NOW() <= INTERVAL '90 minutes'
-        AND o.scheduled_time - NOW() > INTERVAL '35 minutes'
-        AND o.status = 'processing' THEN 'scheduled_processing'
-    WHEN o.is_scheduled = true AND o.scheduled_time - NOW() <= INTERVAL '35 minutes'
-        AND o.status = 'processing' THEN 'choose_captain'
-    WHEN o.status = 'pending' THEN 'pending'
-    WHEN o.status = 'processing' THEN 'captain_selection'
-    WHEN o.status = 'accepted' THEN 'accepted'
-    WHEN o.status = 'preparing' AND cap_recv.stage_name = 'captain_received' THEN 'captain_received'
-    WHEN o.status = 'preparing' THEN 'preparing'
-    WHEN o.status = 'out_for_delivery' THEN 'out_for_delivery'
-    WHEN o.status = 'delivered' THEN 'delivered'
-    ELSE 'processing'
-  END AS phase_label,
-
-  -- هل كان مجدولًا لكنه يعامل كطلب عادي الآن
-  CASE 
-    WHEN o.is_scheduled = true AND o.scheduled_time - NOW() <= INTERVAL '90 minutes'
-        AND o.status IN ('pending', 'processing') THEN true
-    ELSE false
-  END AS was_scheduled_but_now_normal,
-
-  -- معلومات العرض
-  c.name AS customer_name,
-  r.name AS restaurant_name,
-  cap.name AS captain_name
-
-FROM orders o
-LEFT JOIN customers c ON o.customer_id = c.customer_id
-LEFT JOIN restaurants r ON o.restaurant_id = r.restaurant_id
-LEFT JOIN captains cap ON o.captain_id = cap.captain_id
-LEFT JOIN issues iss ON o.order_id = iss.order_id
-LEFT JOIN order_stage_durations cap_recv ON o.order_id = cap_recv.order_id AND cap_recv.stage_name = 'captain_received'
-
-WHERE o.status NOT IN ('cancelled');
-
-CREATE OR REPLACE VIEW order_stage_summary AS
-SELECT
-  order_id,
-  stage_name,
-  duration,
-  recorded_at
-FROM order_stage_durations
-ORDER BY order_id, recorded_at;
-
---==============
---triggre
---==============
+-- ==============
+-- TRIGGERS
+-- ==============
 
 CREATE OR REPLACE FUNCTION update_processing_from_timings()
 RETURNS TRIGGER AS $$
@@ -654,13 +444,8 @@ BEGIN
   FROM orders
   WHERE order_id = NEW.order_id;
 
-  -- حدّث مدة المعالجة الفعلية إذا توفر وقت التسليم الفعلي
-  IF NEW.actual_delivery_time IS NOT NULL AND v_created_at IS NOT NULL THEN
-    UPDATE order_timings
-    SET actual_processing_time = NEW.actual_delivery_time - v_created_at
-    WHERE order_id = NEW.order_id;
-    
-    -- (اختياري) حدّث حالة الطلب إلى delivered
+  -- عند توفر مدة التوصيل الفعلية، اعتبر الطلب مسلماً (بدون تغيير مدة المعالجة لتفادي عدم الاتساق)
+  IF NEW.actual_delivery_time IS NOT NULL THEN
     UPDATE orders
     SET status = 'delivered'
     WHERE order_id = NEW.order_id
@@ -672,7 +457,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_update_processing_from_timings ON order_timings;
-
 CREATE TRIGGER trg_update_processing_from_timings
 AFTER INSERT OR UPDATE OF actual_delivery_time ON order_timings
 FOR EACH ROW
@@ -688,6 +472,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_block_customer_delete ON customers;
 CREATE TRIGGER trg_block_customer_delete
 BEFORE DELETE ON customers
 FOR EACH ROW
@@ -703,6 +488,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_block_restaurant_delete ON restaurants;
 CREATE TRIGGER trg_block_restaurant_delete
 BEFORE DELETE ON restaurants
 FOR EACH ROW
@@ -793,10 +579,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_handle_scheduled_order
-BEFORE INSERT OR UPDATE ON orders
-FOR EACH ROW
-EXECUTE FUNCTION handle_scheduled_order();
+-- NOTE: trigger creation moved below with DROP to ensure idempotency
 -- دالة "تنبيه" الطلب بعد أي إدراج/تحديث على order_timings
 CREATE OR REPLACE FUNCTION bump_order_after_timings()
 RETURNS TRIGGER AS $$
@@ -815,6 +598,13 @@ CREATE TRIGGER trg_bump_order_after_timings
 AFTER INSERT OR UPDATE ON order_timings
 FOR EACH ROW
 EXECUTE FUNCTION bump_order_after_timings();
+
+-- إعادة إنشاء تريغر handle_scheduled_order لضمان الترتيب الصحيح
+DROP TRIGGER IF EXISTS trg_handle_scheduled_order ON orders;
+CREATE TRIGGER trg_handle_scheduled_order
+BEFORE INSERT OR UPDATE ON orders
+FOR EACH ROW
+EXECUTE FUNCTION handle_scheduled_order();
 
 
 -- Function & Trigger: تحديث تقييم الموظف عند إغلاق المشكلة
@@ -909,111 +699,113 @@ CREATE TRIGGER trg_update_captain_delivered_orders
     FOR EACH ROW
     EXECUTE FUNCTION update_captain_delivered_orders();
 
--- INDEXES
--- =============================
+-- ===============
+--  INDEXES
+-- ===============
 
 -- Orders indexes
-CREATE INDEX idx_orders_status ON orders(status);
-CREATE INDEX idx_orders_customer_id ON orders(customer_id);
-CREATE INDEX idx_orders_restaurant_id ON orders(restaurant_id);
-CREATE INDEX idx_orders_captain_id ON orders(captain_id);
-CREATE INDEX idx_orders_created_at ON orders(created_at);
-CREATE INDEX idx_orders_delivery_fee ON orders(delivery_fee);
-CREATE INDEX idx_orders_distance_meters ON orders(distance_meters);
-CREATE INDEX idx_orders_is_scheduled_scheduled_time ON orders(is_scheduled, scheduled_time);
+-- Orders indexes
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+CREATE INDEX IF NOT EXISTS idx_orders_restaurant_id ON orders(restaurant_id);
+CREATE INDEX IF NOT EXISTS idx_orders_captain_id ON orders(captain_id);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_delivery_fee ON orders(delivery_fee);
+CREATE INDEX IF NOT EXISTS idx_orders_distance_meters ON orders(distance_meters);
+CREATE INDEX IF NOT EXISTS idx_orders_is_scheduled_scheduled_time ON orders(is_scheduled, scheduled_time);
 
 -- Orders timings
-CREATE INDEX idx_order_timings_order_id ON order_timings(order_id); -- لتسريع الوصول حسب الطلب
+CREATE INDEX IF NOT EXISTS idx_order_timings_order_id ON order_timings(order_id); -- لتسريع الوصول حسب الطلب
 -- للبحث حسب وقت التسليم المتوقع أو الحقيقي
-CREATE INDEX idx_order_timings_estimated_delivery_time ON order_timings(estimated_delivery_time);
-CREATE INDEX idx_order_timings_actual_delivery_time ON order_timings(actual_delivery_time);
+CREATE INDEX IF NOT EXISTS idx_order_timings_estimated_delivery_time ON order_timings(estimated_delivery_time);
+CREATE INDEX IF NOT EXISTS idx_order_timings_actual_delivery_time ON order_timings(actual_delivery_time);
 
-CREATE INDEX idx_order_timings_actual_processing_time ON order_timings(actual_processing_time); -- لتحليل الأداء والمعالجة
-CREATE INDEX idx_order_timings_total_expected_duration ON order_timings(total_expected_duration); -- للفلترة حسب الوقت المتوقع أو الحسابات الزمنية
+CREATE INDEX IF NOT EXISTS idx_order_timings_actual_processing_time ON order_timings(actual_processing_time); -- لتحليل الأداء والمعالجة
+CREATE INDEX IF NOT EXISTS idx_order_timings_total_expected_duration ON order_timings(total_expected_duration); -- للفلترة حسب الوقت المتوقع أو الحسابات الزمنية
 
 -- Ratings indexes
-CREATE INDEX idx_ratings_restaurant_id ON ratings(restaurant_id);
-CREATE INDEX idx_ratings_order_id ON ratings(order_id);
-CREATE INDEX idx_ratings_restaurant_score ON ratings(restaurant_emoji_score);
-CREATE INDEX idx_ratings_order_score ON ratings(order_emoji_score);
+CREATE INDEX IF NOT EXISTS idx_ratings_restaurant_id ON ratings(restaurant_id);
+CREATE INDEX IF NOT EXISTS idx_ratings_order_id ON ratings(order_id);
+CREATE INDEX IF NOT EXISTS idx_ratings_restaurant_score ON ratings(restaurant_emoji_score);
+CREATE INDEX IF NOT EXISTS idx_ratings_order_score ON ratings(order_emoji_score);
 
 -- Notes indexes
-CREATE INDEX idx_notes_target_type ON notes(target_type);
-CREATE INDEX idx_notes_reference_id ON notes(reference_id);
-CREATE INDEX idx_notes_target_reference ON notes(target_type, reference_id);
-CREATE INDEX idx_notes_issue_id ON notes(issue_id);
+CREATE INDEX IF NOT EXISTS idx_notes_target_type ON notes(target_type);
+CREATE INDEX IF NOT EXISTS idx_notes_reference_id ON notes(reference_id);
+CREATE INDEX IF NOT EXISTS idx_notes_target_reference ON notes(target_type, reference_id);
+CREATE INDEX IF NOT EXISTS idx_notes_issue_id ON notes(issue_id);
 
 -- Weather log indexes
-CREATE INDEX idx_weather_log_city ON weather_log(city);
-CREATE INDEX idx_weather_log_recorded_at ON weather_log(recorded_at);
-CREATE INDEX idx_weather_log_city_recorded_at ON weather_log(city, recorded_at);
+CREATE INDEX IF NOT EXISTS idx_weather_log_city ON weather_log(city);
+CREATE INDEX IF NOT EXISTS idx_weather_log_recorded_at ON weather_log(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_weather_log_city_recorded_at ON weather_log(city, recorded_at);
 
 -- Restaurant phones indexes
-CREATE INDEX idx_restaurant_phones_restaurant_id ON restaurant_phones(restaurant_id);
-CREATE INDEX idx_restaurant_phones_phone_type ON restaurant_phones(phone_type);
+CREATE INDEX IF NOT EXISTS idx_restaurant_phones_restaurant_id ON restaurant_phones(restaurant_id);
+CREATE INDEX IF NOT EXISTS idx_restaurant_phones_phone_type ON restaurant_phones(phone_type);
 
 -- Issues indexes
-CREATE INDEX idx_issues_order_id ON issues(order_id);
-CREATE INDEX idx_issues_customer_id ON issues(customer_id);
-CREATE INDEX idx_issues_employee_id ON issues(employee_id);
-CREATE INDEX idx_issues_status ON issues(status);
-CREATE INDEX idx_issues_category ON issues(category);
+CREATE INDEX IF NOT EXISTS idx_issues_order_id ON issues(order_id);
+CREATE INDEX IF NOT EXISTS idx_issues_customer_id ON issues(customer_id);
+CREATE INDEX IF NOT EXISTS idx_issues_employee_id ON issues(employee_id);
+CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
+CREATE INDEX IF NOT EXISTS idx_issues_category ON issues(category);
 
 -- Call logs indexes
-CREATE INDEX idx_call_logs_order_id ON call_logs(order_id);
-CREATE INDEX idx_call_logs_customer_id ON call_logs(customer_id);
-CREATE INDEX idx_call_logs_issue_id ON call_logs(issue_id);
-CREATE INDEX idx_call_logs_employee_id ON call_logs(employee_id);
-CREATE INDEX idx_call_logs_call_time ON call_logs(call_time);
+CREATE INDEX IF NOT EXISTS idx_call_logs_order_id ON call_logs(order_id);
+CREATE INDEX IF NOT EXISTS idx_call_logs_customer_id ON call_logs(customer_id);
+CREATE INDEX IF NOT EXISTS idx_call_logs_issue_id ON call_logs(issue_id);
+CREATE INDEX IF NOT EXISTS idx_call_logs_employee_id ON call_logs(employee_id);
+CREATE INDEX IF NOT EXISTS idx_call_logs_call_time ON call_logs(call_time);
 
 -- Employees indexes
-CREATE INDEX idx_employees_department ON employees(department);
-CREATE INDEX idx_employees_is_active ON employees(is_active);
-CREATE INDEX idx_employees_role ON employees(role);
-CREATE INDEX idx_employees_ai_performance_score ON employees(ai_performance_score);
-CREATE INDEX idx_employees_efficiency_rating ON employees(efficiency_rating);
-CREATE INDEX idx_employees_customer_satisfaction_score ON employees(customer_satisfaction_score);
+CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department);
+CREATE INDEX IF NOT EXISTS idx_employees_is_active ON employees(is_active);
+CREATE INDEX IF NOT EXISTS idx_employees_role ON employees(role);
+CREATE INDEX IF NOT EXISTS idx_employees_ai_performance_score ON employees(ai_performance_score);
+CREATE INDEX IF NOT EXISTS idx_employees_efficiency_rating ON employees(efficiency_rating);
+CREATE INDEX IF NOT EXISTS idx_employees_customer_satisfaction_score ON employees(customer_satisfaction_score);
 
 -- AI Decisions Log indexes
-CREATE INDEX idx_ai_decisions_order_id ON ai_decisions_log(order_id);
-CREATE INDEX idx_ai_decisions_type ON ai_decisions_log(decision_type);
-CREATE INDEX idx_ai_decisions_result ON ai_decisions_log(decision_result);
-CREATE INDEX idx_ai_decisions_timestamp ON ai_decisions_log(decision_timestamp);
-CREATE INDEX idx_ai_decisions_confidence ON ai_decisions_log(confidence_score);
+CREATE INDEX IF NOT EXISTS idx_ai_decisions_order_id ON ai_decisions_log(order_id);
+CREATE INDEX IF NOT EXISTS idx_ai_decisions_type ON ai_decisions_log(decision_type);
+CREATE INDEX IF NOT EXISTS idx_ai_decisions_result ON ai_decisions_log(decision_result);
+CREATE INDEX IF NOT EXISTS idx_ai_decisions_timestamp ON ai_decisions_log(decision_timestamp);
+CREATE INDEX IF NOT EXISTS idx_ai_decisions_confidence ON ai_decisions_log(confidence_score);
 
 -- AI Failures indexes
-CREATE INDEX idx_ai_failures_order_id ON ai_failures(order_id);
-CREATE INDEX idx_ai_failures_module ON ai_failures(failure_module);
-CREATE INDEX idx_ai_failures_timestamp ON ai_failures(failure_timestamp);
-CREATE INDEX idx_ai_failures_resolved ON ai_failures(is_resolved);
-CREATE INDEX idx_ai_failures_severity ON ai_failures(severity_level);
+CREATE INDEX IF NOT EXISTS idx_ai_failures_order_id ON ai_failures(order_id);
+CREATE INDEX IF NOT EXISTS idx_ai_failures_module ON ai_failures(failure_module);
+CREATE INDEX IF NOT EXISTS idx_ai_failures_timestamp ON ai_failures(failure_timestamp);
+CREATE INDEX IF NOT EXISTS idx_ai_failures_resolved ON ai_failures(is_resolved);
+CREATE INDEX IF NOT EXISTS idx_ai_failures_severity ON ai_failures(severity_level);
 
 -- Alerts Log indexes
-CREATE INDEX idx_alerts_order_id ON alerts_log(order_id);
-CREATE INDEX idx_alerts_type ON alerts_log(alert_type);
-CREATE INDEX idx_alerts_level ON alerts_log(alert_level);
-CREATE INDEX idx_alerts_created_at ON alerts_log(created_at);
-CREATE INDEX idx_alerts_resolved ON alerts_log(is_resolved);
-CREATE INDEX idx_alerts_resolved_by ON alerts_log(resolved_by);
+CREATE INDEX IF NOT EXISTS idx_alerts_order_id ON alerts_log(order_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_type ON alerts_log(alert_type);
+CREATE INDEX IF NOT EXISTS idx_alerts_level ON alerts_log(alert_level);
+CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_alerts_resolved ON alerts_log(is_resolved);
+CREATE INDEX IF NOT EXISTS idx_alerts_resolved_by ON alerts_log(resolved_by);
 
 -- Order Stage Durations indexes
-CREATE INDEX idx_stage_durations_order_id ON order_stage_durations(order_id);
-CREATE INDEX idx_stage_durations_stage_name ON order_stage_durations(stage_name);
+CREATE INDEX IF NOT EXISTS idx_stage_durations_order_id ON order_stage_durations(order_id);
+CREATE INDEX IF NOT EXISTS idx_stage_durations_stage_name ON order_stage_durations(stage_name);
 --CREATE INDEX idx_stage_durations_status ON order_stage_durations(stage_status);
-CREATE INDEX idx_stage_durations_order_stage ON order_stage_durations(order_id, stage_name);
+CREATE INDEX IF NOT EXISTS idx_stage_durations_order_stage ON order_stage_durations(order_id, stage_name);
 
 -- Menu items indexes
-CREATE INDEX idx_menu_items_restaurant_id ON menu_items(restaurant_id);
-CREATE INDEX idx_menu_items_is_visible ON menu_items(is_visible);
+CREATE INDEX IF NOT EXISTS idx_menu_items_restaurant_id ON menu_items(restaurant_id);
+CREATE INDEX IF NOT EXISTS idx_menu_items_is_visible ON menu_items(is_visible);
 
 -- Menu item options indexes
-CREATE INDEX idx_menu_item_options_item_id ON menu_item_options(item_id);
-CREATE INDEX idx_menu_item_options_is_available ON menu_item_options(is_available);
-CREATE INDEX idx_menu_item_options_item_available ON menu_item_options(item_id, is_available);
+CREATE INDEX IF NOT EXISTS idx_menu_item_options_item_id ON menu_item_options(item_id);
+CREATE INDEX IF NOT EXISTS idx_menu_item_options_is_available ON menu_item_options(is_available);
+CREATE INDEX IF NOT EXISTS idx_menu_item_options_item_available ON menu_item_options(item_id, is_available);
 
+-- =============
 -- COMMENTS
--- =============================
-
+-- =============
 COMMENT ON TABLE orders IS 'Orders table with core order information. Duration tracking is now handled by the order_stage_durations table for better flexibility and detailed stage analysis.';
 COMMENT ON COLUMN orders.created_at IS 'Timestamp when order was created by customer (for analytics)';
 COMMENT ON COLUMN orders.distance_meters IS 'Distance between restaurant and customer in meters for delivery fee calculation';
@@ -1021,6 +813,10 @@ COMMENT ON COLUMN orders.delivery_fee IS 'Captain delivery fee calculated as dis
 COMMENT ON COLUMN orders.total_price_customer IS 'Total price charged to customer including delivery fee and restaurant invoice';
 COMMENT ON COLUMN orders.total_price_restaurant IS 'Restaurant invoice amount (excluding delivery fee)';
 COMMENT ON COLUMN orders.cancel_count_per_day IS 'Number of times customer cancelled orders today';
+COMMENT ON COLUMN orders.current_stage_name IS 'Processing substage: waiting_approval | preparing | captain_received';
+COMMENT ON COLUMN orders.is_scheduled IS 'Marks scheduled orders that may jump stages based on time';
+COMMENT ON COLUMN orders.scheduled_time IS 'Customer requested delivery time for scheduled orders';
+COMMENT ON COLUMN orders.is_deferred IS 'Helper: jump next() from pending→processing when true';
 
 COMMENT ON TABLE restaurant_phones IS 'Normalized table for restaurant phone numbers. Each phone number is stored as a separate row, allowing unlimited phone numbers per restaurant with proper categorization.';
 
@@ -1032,10 +828,11 @@ COMMENT ON COLUMN notes.issue_id IS 'معرّف المشكلة المرتبطة 
 COMMENT ON TABLE customer_addresses IS 'Enhanced customer addresses with neighborhood and extra details';
 COMMENT ON COLUMN customer_addresses.neighborhood IS 'Neighborhood or district within the city';
 COMMENT ON COLUMN customer_addresses.extra_details IS 'Additional delivery instructions or landmarks';
+COMMENT ON COLUMN customers.cancelled_count IS 'Total number of cancelled orders by the customer';
 
 --COMMENT ON VIEW order_duration_flags IS 'Alert monitoring view for order duration flags - highlights orders exceeding predefined duration thresholds for frontend highlighting. Now uses order_stage_durations table for duration data.';
 --COMMENT ON VIEW order_duration_analytics IS 'Advanced duration analytics with formatted durations and performance indicators. Now uses order_stage_durations table for duration data.';
-COMMENT ON VIEW order_summary IS 'Primary order summary with duration metrics prominently displayed. Now uses order_stage_durations table for duration data.';
+-- سيتم إضافة التعليق على العرض order_summary بعد إنشائه في قسم الـ Views
 --COMMENT ON VIEW restaurant_performance IS 'Restaurant performance metrics and ratings using restaurant_emoji_score for accurate restaurant-specific ratings';
 --COMMENT ON VIEW order_timing_validation IS 'Validation view to check timestamp and duration consistency - use for debugging timing issues. Now uses order_stage_durations table for duration data.';
 --COMMENT ON VIEW order_timestamps_calculated IS 'Analytics view providing calculated timestamps from durations - use when timestamp analytics are needed. Now uses order_stage_durations table for duration data.';
@@ -1289,3 +1086,120 @@ COMMENT ON COLUMN menu_item_options.is_available IS 'هل الإضافة متا�
 COMMENT ON COLUMN menu_item_options.created_at IS 'تاريخ إنشاء الإضافة';
 
 COMMENT ON TABLE menu_items IS 'جدول أصناف القوائم مع دعم الإضافات عبر JSONB وخصم النسب المئوية. الإضافات التفصيلية محفوظة في جدول menu_item_options.';
+
+-- ========================================
+-- إصلاح شامل لقاعدة البيانات
+-- ========================================
+/* تم إلغاء كتلة الإصلاح الشامل لأنها غير مطلوبة مع مخطط الإنشاء المرتب أعلاه
+   وكانت تسبب إسقاط العمود status قبل إنشاء الـ Views. */
+
+-- ========================================
+-- إنشاء Views بعد إنشاء status
+-- ========================================
+
+-- VIEWS
+-- =============================
+DROP VIEW IF EXISTS order_summary CASCADE;
+CREATE OR REPLACE VIEW order_summary AS
+SELECT
+  o.order_id,
+  o.status,
+  TO_CHAR(COALESCE(pending.duration, INTERVAL '0'), 'MI:SS') AS pending_duration_mmss,
+  TO_CHAR(COALESCE(accept.duration, INTERVAL '0'), 'MI:SS') AS accept_duration_mmss,
+  TO_CHAR(COALESCE(captain_selection.duration, INTERVAL '0'), 'MI:SS') AS captain_selection_duration_mmss,
+  TO_CHAR(COALESCE(preparing.duration, INTERVAL '0'), 'MI:SS') AS preparation_duration_mmss,
+  TO_CHAR(COALESCE(delivery.duration, INTERVAL '0'), 'MI:SS') AS delivery_duration_mmss,
+  ot.estimated_delivery_time,
+  TO_CHAR(ot.total_expected_duration, 'MI:SS') AS estimated_delivery_duration_mmss,
+  o.distance_meters,
+  o.delivery_fee,
+  o.total_price_customer,
+  o.total_price_restaurant,
+  TO_CHAR(
+    COALESCE(pending.duration, INTERVAL '0') +
+    COALESCE(accept.duration, INTERVAL '0') +
+    COALESCE(captain_selection.duration, INTERVAL '0') +
+    COALESCE(preparing.duration, INTERVAL '0') +
+    COALESCE(delivery.duration, INTERVAL '0'),
+    'MI:SS'
+  ) AS total_processing_duration_mmss
+FROM orders o
+LEFT JOIN order_stage_durations pending ON o.order_id = pending.order_id AND pending.stage_name = 'pending'
+LEFT JOIN order_stage_durations accept ON o.order_id = accept.order_id AND accept.stage_name = 'waiting_approval'
+LEFT JOIN order_stage_durations captain_selection ON o.order_id = captain_selection.order_id AND captain_selection.stage_name = 'choose_captain'
+LEFT JOIN order_stage_durations preparing ON o.order_id = preparing.order_id AND preparing.stage_name = 'preparing'
+LEFT JOIN order_stage_durations delivery ON o.order_id = delivery.order_id AND delivery.stage_name = 'out_for_delivery'
+LEFT JOIN order_timings ot ON o.order_id = ot.order_id
+WHERE o.status NOT IN ('cancelled');
+DROP VIEW IF EXISTS view_order_timing_complete CASCADE;
+CREATE OR REPLACE VIEW view_order_timing_complete AS
+SELECT
+  o.order_id,
+  o.status,
+  o.is_scheduled,
+  o.created_at,
+  ot.estimated_delivery_time,
+  o.delivery_method,
+  
+  -- التوقيت المتوقع
+  ot.expected_preparation_time,
+  ot.expected_delivery_duration,
+  (ot.expected_preparation_time + ot.expected_delivery_duration + INTERVAL '6 minutes') AS total_expected_duration,
+
+  -- التواقيت الفعلية بصيغة MI:SS
+  TO_CHAR(COALESCE(pending.duration, INTERVAL '0'), 'MI:SS') AS pending_duration_mmss,
+  TO_CHAR(COALESCE(accept.duration, INTERVAL '0'), 'MI:SS') AS accept_duration_mmss,
+  TO_CHAR(COALESCE(captain_selection.duration, INTERVAL '0'), 'MI:SS') AS captain_selection_duration_mmss,
+  TO_CHAR(COALESCE(preparing.duration, INTERVAL '0'), 'MI:SS') AS preparation_duration_mmss,
+  TO_CHAR(COALESCE(delivery.duration, INTERVAL '0'), 'MI:SS') AS delivery_duration_mmss,
+
+  -- المجموع الكامل للمدد
+  TO_CHAR(
+    COALESCE(pending.duration, INTERVAL '0') +
+    COALESCE(accept.duration, INTERVAL '0') +
+    COALESCE(captain_selection.duration, INTERVAL '0') +
+    COALESCE(preparing.duration, INTERVAL '0') +
+    COALESCE(delivery.duration, INTERVAL '0'),
+    'MI:SS'
+  ) AS total_processing_duration_mmss,
+
+  -- معلومات الأشخاص
+  c.name AS customer_name,
+  r.name AS restaurant_name,
+  cap.name AS captain_name,
+
+  -- بيانات الكلفة
+  o.total_price_customer,
+  o.total_price_restaurant,
+  o.delivery_fee,
+  o.distance_meters,
+
+  -- التقييمات
+  rt.restaurant_emoji_score,
+  rt.order_emoji_score
+
+FROM orders o
+LEFT JOIN customers c ON o.customer_id = c.customer_id
+LEFT JOIN restaurants r ON o.restaurant_id = r.restaurant_id
+LEFT JOIN captains cap ON o.captain_id = cap.captain_id
+LEFT JOIN order_timings ot ON o.order_id = ot.order_id
+LEFT JOIN ratings rt ON o.order_id = rt.order_id
+
+-- ربط مراحل الطلب الخمسة
+LEFT JOIN order_stage_durations pending ON o.order_id = pending.order_id AND pending.stage_name = 'pending'
+LEFT JOIN order_stage_durations accept ON o.order_id = accept.order_id AND accept.stage_name = 'waiting_approval'
+LEFT JOIN order_stage_durations captain_selection ON o.order_id = captain_selection.order_id AND captain_selection.stage_name = 'choose_captain'
+LEFT JOIN order_stage_durations preparing ON o.order_id = preparing.order_id AND preparing.stage_name = 'preparing'
+LEFT JOIN order_stage_durations delivery ON o.order_id = delivery.order_id AND delivery.stage_name = 'out_for_delivery';
+
+-- إضافة باقي Views هنا...
+
+-- 9. تحديث order_stage_durations
+UPDATE order_stage_durations 
+SET stage_name = 'waiting_approval' 
+WHERE stage_name = 'accepted';
+
+UPDATE order_stage_durations 
+SET stage_name = 'choose_captain' 
+WHERE stage_name = 'captain_selection';
+

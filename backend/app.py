@@ -14,13 +14,24 @@ from models import Base, Customer, Restaurant, Order, Captain
 
 app = FastAPI()
 
-app.add_middleware(
-	CORSMiddleware,
-	allow_origins=settings.ALLOWED_ORIGINS,
-	allow_credentials=True,
-	allow_methods=["*"],
-	allow_headers=["*"],
-)
+# CORS (dev-friendly). إذا كان DEBUG مفعّلاً نسمح بأي أصل محلي، بدون Credentials
+if settings.DEBUG:
+	origin_regex = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+	app.add_middleware(
+		CORSMiddleware,
+		allow_origin_regex=origin_regex,
+		allow_credentials=False,
+		allow_methods=["*"],
+		allow_headers=["*"],
+	)
+else:
+	app.add_middleware(
+		CORSMiddleware,
+		allow_origins=settings.ALLOWED_ORIGINS,
+		allow_credentials=True,
+		allow_methods=["*"],
+		allow_headers=["*"],
+	)
 
 app.add_middleware(
 	TrustedHostMiddleware,

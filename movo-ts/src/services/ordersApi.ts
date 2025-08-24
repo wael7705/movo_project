@@ -25,6 +25,8 @@ const allowedStatuses: Set<string> = new Set([
   "delivered",
   "cancelled",
   "problem",
+  "deferred",
+  "pickup",
 ]);
 
 function mapStatus(status?: string): string | undefined {

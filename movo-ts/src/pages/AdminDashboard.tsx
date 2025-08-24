@@ -38,6 +38,19 @@ export default function Dashboard() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+
+  const sections = ([
+    { title: lang === 'ar' ? 'قيد الانتظار' : 'Pending', status: 'pending' },
+    { title: lang === 'ar' ? 'تعيين كابتن' : 'Captain Selection', status: 'choose_captain' },
+    { title: lang === 'ar' ? 'معالجة' : 'Processing', status: 'processing' },
+    { title: lang === 'ar' ? 'خرج للتوصيل' : 'Out for Delivery', status: 'out_for_delivery' },
+    { title: lang === 'ar' ? 'تم التوصيل' : 'Delivered', status: 'delivered' },
+    { title: lang === 'ar' ? 'ملغي' : 'Cancelled', status: 'cancelled' },
+    { title: lang === 'ar' ? 'مشكلة' : 'Problem', status: 'problem' },
+    { title: lang === 'ar' ? 'مؤجل' : 'Deferred', status: 'deferred' },
+    { title: lang === 'ar' ? 'استلام شخصي' : 'Pickup', status: 'pickup' },
+  ]);
 
   useEffect(() => {
     setLoading(true);
@@ -49,29 +62,27 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, [activeTab, lang]);
 
+  useEffect(() => {
+    api.orders.counts().then(setCounts).catch(() => {});
+  }, [activeTab, lang]);
+
   // Handler functions for order actions
   const handleStatusChange = async (orderId: number, newStatus: string) => {
     try {
       if (newStatus === 'cancelled') {
         await api.orders.cancel(orderId);
-        setActiveTab('cancelled');
-        const data = await api.orders.list({ order_status: 'cancelled' });
-        setOrders(data);
-        return;
+      } else {
+        // اتبع مسار next في الباكيند فقط، ولا تغيّر التبويب
+        await api.orders.next(orderId);
       }
-
-      // Use strict NEXT flow regardless of UI sub-stages
-      await api.orders.next(orderId);
-      const nextTabMap: Record<string, string> = {
-        pending: 'captain_assigned',
-        captain_assigned: 'processing',
-        processing: 'out_for_delivery',
-        out_for_delivery: 'delivered',
-      };
-      const nextTab = nextTabMap[activeTab] || activeTab;
-      setActiveTab(nextTab);
-      const data = await api.orders.list({ order_status: nextTab });
+      // جدّد أوامر التبويب الحالي فقط دون تبديل التبويب
+      const [data, cnt] = await Promise.all([
+        api.orders.list({ order_status: activeTab }),
+        api.orders.counts(),
+      ]);
       setOrders(data);
+      setCounts(cnt);
+      // (اختياري) يمكن تحديث عدادات عامة إذا أردت لاحقاً
     } catch (err) {
       console.error('Failed to update order status:', err);
     }
@@ -98,8 +109,12 @@ export default function Dashboard() {
       await api.orders.createDemo();
       // بعد الإنشاء يجب أن يبدأ الطلب من pending وفق قاعدة البيانات
       setActiveTab('pending');
-      const data = await api.orders.list({ order_status: 'pending' });
+      const [data, cnt] = await Promise.all([
+        api.orders.list({ order_status: 'pending' }),
+        api.orders.counts(),
+      ]);
       setOrders(data);
+      setCounts(cnt);
     } catch (err) {
       console.error('Failed to create demo order:', err);
     }
@@ -127,16 +142,7 @@ export default function Dashboard() {
         </div>
         <LanguageSwitcher currentLang={lang} onSwitch={setLang} />
         <Tabs
-          tabs={([
-            { title: lang === 'ar' ? 'قيد الانتظار' : 'Pending', status: 'pending' },
-            { title: lang === 'ar' ? 'اختيار كابتن' : 'Select Captain', status: 'captain_assigned' },
-            { title: lang === 'ar' ? 'معالجة' : 'Processing', status: 'processing' },
-            { title: lang === 'ar' ? 'مؤجل' : 'Delayed', status: 'delayed' },
-            { title: lang === 'ar' ? 'خرج للتوصيل' : 'Out for Delivery', status: 'out_for_delivery' },
-            { title: lang === 'ar' ? 'تم التوصيل' : 'Delivered', status: 'delivered' },
-            { title: lang === 'ar' ? 'ملغي' : 'Cancelled', status: 'cancelled' },
-            { title: lang === 'ar' ? 'مشكلة' : 'Issue', status: 'issue' },
-          ]).map((section) => ({ label: section.title, value: section.status }))}
+          tabs={sections.map((s) => ({ label: `${s.title} (${counts[s.status] ?? 0})`, value: s.status }))}
           active={activeTab}
           onChange={setActiveTab}
           dir={lang === 'ar' ? 'rtl' : 'ltr'}

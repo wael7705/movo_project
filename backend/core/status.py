@@ -1,7 +1,7 @@
 from typing import Optional
 
 # status هو مصدر الحقيقة الوحيد للحالة
-VALID = {"pending", "choose_captain", "processing", "out_for_delivery", "delivered", "cancelled", "problem"}
+VALID = {"pending", "choose_captain", "processing", "out_for_delivery", "delivered", "cancelled", "problem", "deferred", "pickup"}
 
 # خريطة الحالات القديمة إلى الجديدة
 ALIASES = {

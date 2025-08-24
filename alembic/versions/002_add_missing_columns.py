@@ -44,3 +44,4 @@ def downgrade():
     # Remove the columns we added
     op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS current_stage_name")
     op.execute("ALTER TABLE orders DROP COLUMN IF EXISTS cancel_count_per_day")
+

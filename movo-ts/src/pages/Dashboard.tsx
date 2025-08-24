@@ -19,6 +19,8 @@ const translations = {
       { title: 'تم التوصيل', status: 'delivered' },
       { title: 'ملغي', status: 'cancelled' },
       { title: 'مشكلة', status: 'problem' },
+      { title: 'مؤجل', status: 'deferred' },
+      { title: 'استلام شخصي', status: 'pickup' },
     ],
     processingSubstages: [
       { key: 'waiting_approval', label: 'انتظار الموافقة' },
@@ -44,6 +46,8 @@ const translations = {
       { title: 'Delivered', status: 'delivered' },
       { title: 'Cancelled', status: 'cancelled' },
       { title: 'Problem', status: 'problem' },
+      { title: 'Deferred', status: 'deferred' },
+      { title: 'Pickup', status: 'pickup' },
     ],
     processingSubstages: [
       { key: 'waiting_approval', label: 'Waiting Approval' },
@@ -112,6 +116,29 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error('Error creating demo order:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStatusChange = async (orderId: number, newStatus: string) => {
+    try {
+      setLoading(true);
+      if (newStatus === 'cancelled') {
+        await api.orders.cancel(orderId);
+      } else {
+        // نوحّد كل الأزرار التي تعني الانتقال إلى التالي تحت /next
+        await api.orders.next(orderId);
+      }
+      // حدث القائمة والعدادات دون تغيير التبويب الحالي
+      const [data, cnt] = await Promise.all([
+        getOrdersByStatus(activeTab),
+        api.orders.counts(),
+      ]);
+      setOrders(data);
+      setCounts(cnt);
+    } catch (e) {
+      setError(t.error);
     } finally {
       setLoading(false);
     }
@@ -193,9 +220,14 @@ export default function Dashboard() {
               ) : visibleOrders.length === 0 ? (
                 <div className="text-center text-gray-400 py-8">{t.noOrders}</div>
               ) : (
-                visibleOrders.map((order) => {
-                  return <OrderCard key={order.order_id} {...order} lang={lang} />;
-                })
+                visibleOrders.map((order) => (
+                  <OrderCard
+                    key={order.order_id}
+                    {...order}
+                    lang={lang}
+                    onStatusChange={handleStatusChange}
+                  />
+                ))
               )}
             </div>
           </>
@@ -239,9 +271,14 @@ export default function Dashboard() {
                     <div className="bg-blue-900 text-blue-100 rounded-lg p-4 text-center text-sm">{t.noOrders}</div>
                   ) : (
                     <div className="flex flex-col gap-4">
-                      {subOrders.map((order) => {
-                        return <OrderCard key={order.order_id} {...order} lang={lang} />;
-                      })}
+                      {subOrders.map((order) => (
+                        <OrderCard
+                          key={order.order_id}
+                          {...order}
+                          lang={lang}
+                          onStatusChange={handleStatusChange}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
@@ -257,9 +294,14 @@ export default function Dashboard() {
             ) : visibleOrders.length === 0 ? (
               <div className="text-center text-gray-400 py-8">{t.noOrders}</div>
             ) : (
-              visibleOrders.map((order) => {
-                return <OrderCard key={order.order_id} {...order} lang={lang} />;
-              })
+              visibleOrders.map((order) => (
+                <OrderCard
+                  key={order.order_id}
+                  {...order}
+                  lang={lang}
+                  onStatusChange={handleStatusChange}
+                />
+              ))
             )}
           </div>
         )}

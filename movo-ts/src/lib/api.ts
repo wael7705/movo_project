@@ -24,14 +24,16 @@ export const api = {
     updateStatus: async (id: number | string, status: string) => {
       // تطبيع الحالة لتتوافق مع enum الموجود في قاعدة البيانات
       const map: Record<string, string> = {
-        captain_assigned: 'accepted',
-        choose_captain: 'accepted',
+        captain_assigned: 'choose_captain',
+        choose_captain: 'choose_captain',
         waiting_approval: 'processing',
         preparing: 'processing',
         captain_received: 'processing',
-        problem: 'processing',
-        delayed: 'processing',
-        issue: 'processing',
+        problem: 'problem',
+        delayed: 'deferred',
+        issue: 'problem',
+        deferred: 'deferred',
+        pickup: 'pickup',
       };
       const normalized = map[status] ?? status;
       const res = await fetch(`${BASE}/orders/${id}`, {

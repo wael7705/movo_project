@@ -5,8 +5,13 @@ from alembic import context
 import os
 import sys
 
-# Add the backend directory to the Python path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+# Ensure project root and backend are on sys.path for imports
+_HERE = os.path.abspath(os.path.dirname(__file__))
+_ROOT = os.path.abspath(os.path.join(_HERE, '..'))
+_BACKEND = os.path.join(_ROOT, 'backend')
+for _p in (_ROOT, _BACKEND):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -45,7 +50,12 @@ def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     # Import models here to avoid circular imports
     try:
-        from models import Base
+        try:
+            # Prefer explicit package import
+            from backend.models import Base  # type: ignore
+        except Exception:
+            # Fallback to direct import if backend is already in path
+            from models import Base  # type: ignore
         global target_metadata
         target_metadata = Base.metadata
     except ImportError:
