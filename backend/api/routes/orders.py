@@ -82,19 +82,17 @@ async def list_orders(
 
 @router.get("/counts", response_model=Dict[str, int])
 async def counts(session: AsyncSession = Depends(get_session)) -> Dict[str, int]:
-    """Return counts per normalized status for all orders.
-    Uses DB status (already normalized by enum) and fills zeros for missing keys.
+    """Return counts per tab (using current_status logic to match UI).
+    This aligns counters with what the dashboard renders under each tab.
     """
-    # Get counts grouped by status directly from DB
-    result = await session.execute(
-        select(Order.status, func.count()).group_by(Order.status)
-    )
-    rows = result.all()
+    result = await session.execute(select(Order))
+    orders = result.scalars().all()
 
     counts_map: Dict[str, int] = {k: 0 for k in VALID}
-    for status_val, cnt in rows:
-        if status_val in counts_map:
-            counts_map[status_val] = int(cnt)
+    for order in orders:
+        current = compute_current_status(order)
+        if current in counts_map:
+            counts_map[current] += 1
 
     return counts_map
 

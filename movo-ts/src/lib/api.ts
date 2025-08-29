@@ -1,4 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
+import { makeAbortable } from "../api/http";
 
 const BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
 export const queryClient = new QueryClient();
@@ -9,6 +10,13 @@ async function toJson(response: Response) {
   }
   return response.json();
 }
+
+async function _fetchJSON(url: string, signal?: AbortSignal) {
+  const res = await fetch(url, { signal, headers: { Accept: "application/json" } });
+  return toJson(res);
+}
+
+export const fetchCounts = makeAbortable((signal?: AbortSignal) => _fetchJSON(`${BASE}/orders/counts`, signal));
 
 export const api = {
   health: () => fetch(`${BASE}/db_ping`).then(toJson),

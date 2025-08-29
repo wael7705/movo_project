@@ -3,6 +3,7 @@ import Tabs from '../components/Tabs';
 import OrderCard from '../components/OrderCard';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import MapView, { type Captain } from '../components/MapView';
+import AssignCaptainView from '../features/assign/AssignCaptainView';
 import api from '../lib/api';
 import { getOrdersByStatus } from '../services/ordersApi';
 
@@ -207,10 +208,25 @@ export default function Dashboard() {
         
         {activeTab === 'choose_captain' ? (
           <>
-            <MapView
-              customerLocation={visibleOrders[0]?.customerLocation}
-              restaurantLocation={visibleOrders[0]?.restaurantLocation}
-              captains={dummyCaptains}
+            {/* خريطة ترشيح الكباتن بكامل العرض */}
+            <AssignCaptainView
+              orderId={visibleOrders[0]?.order_id ?? 0}
+              restaurant={{
+                lat: visibleOrders[0]?.restaurantLocation?.lat ?? 33.5138,
+                lng: visibleOrders[0]?.restaurantLocation?.lng ?? 36.2765,
+              }}
+              customer={{
+                lat: visibleOrders[0]?.customerLocation?.lat ?? 33.515,
+                lng: visibleOrders[0]?.customerLocation?.lng ?? 36.28,
+              }}
+              onAssigned={async () => {
+                const [data, cnt] = await Promise.all([
+                  getOrdersByStatus(activeTab),
+                  api.orders.counts(),
+                ]);
+                setOrders(data);
+                setCounts(cnt);
+              }}
             />
             <div className="flex flex-col gap-4 mt-4">
               {loading ? (
@@ -287,6 +303,15 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="flex flex-col gap-4 mt-4">
+            {activeTab === 'out_for_delivery' && (
+              <MapView
+                customerLocation={visibleOrders[0]?.customerLocation}
+                restaurantLocation={visibleOrders[0]?.restaurantLocation}
+                captains={dummyCaptains}
+                lang={lang}
+                mode="track"
+              />
+            )}
             {loading ? (
               <div className="text-center text-gray-400 py-8">{t.loading}</div>
             ) : error ? (

@@ -2,16 +2,15 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select as _select
 from core.status import compute_current_status
-from core.db import AsyncSessionLocal
+from core.db import get_session
 from models.order import Order
 from core.db import engine
 
 router = APIRouter()
 
 
-async def get_session() -> AsyncSession:
-    """Get database session."""
-    return AsyncSessionLocal()
+async def _dep_session() -> AsyncSession:
+    return get_session()  # pass-through for Depends
 
 
 def _sanitize_db_url() -> str:

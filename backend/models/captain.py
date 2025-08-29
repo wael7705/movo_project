@@ -14,6 +14,9 @@ class Captain(Base):
     orders_delivered = Column(Integer, default=0)
     performance = Column(Numeric(3, 2), default=5.00)
     available = Column(Boolean, default=True)
+    # إحداثيات آخر موقع (للتتبع الحي)
+    last_lat = Column(Numeric(10, 8))
+    last_lng = Column(Numeric(11, 8))
     created_at = Column(TIMESTAMP(timezone=False), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=False), server_default=func.now(), onupdate=func.now())
 

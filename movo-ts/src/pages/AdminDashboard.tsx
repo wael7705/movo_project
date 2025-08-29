@@ -3,6 +3,7 @@ import Tabs from '../components/Tabs';
 import OrderCard from '../components/OrderCard';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import OrderMap from '../components/OrderMap';
+import AssignCaptainView from '../features/assign/AssignCaptainView';
 import { type Captain } from '../components/MapView';
 import api from '../lib/api';
 
@@ -39,6 +40,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [awaitingOrders, setAwaitingOrders] = useState<Record<number, boolean>>({});
 
   const sections = ([
     { title: lang === 'ar' ? 'قيد الانتظار' : 'Pending', status: 'pending' },
@@ -65,6 +68,18 @@ export default function Dashboard() {
   useEffect(() => {
     api.orders.counts().then(setCounts).catch(() => {});
   }, [activeTab, lang]);
+
+  // حافظ على طلب مختار لتبويب تعيين كابتن
+  useEffect(() => {
+    if (activeTab !== 'choose_captain') return;
+    if (!orders || orders.length === 0) {
+      setSelectedOrderId(null);
+      return;
+    }
+    // إن لم يكن هناك طلب محدد أو تم حذفه من القائمة، اختر الأول
+    const exists = selectedOrderId && orders.some(o => o.order_id === selectedOrderId);
+    if (!exists) setSelectedOrderId(orders[0].order_id);
+  }, [activeTab, orders, selectedOrderId]);
 
   // Handler functions for order actions
   const handleStatusChange = async (orderId: number, newStatus: string) => {
@@ -147,17 +162,45 @@ export default function Dashboard() {
           onChange={setActiveTab}
           dir={lang === 'ar' ? 'rtl' : 'ltr'}
         />
-        {activeTab === 'captain_assigned' ? (
+        {activeTab === 'choose_captain' ? (
           <>
-            <OrderMap
-              mode="select"
-              customerLocation={orders[0]?.customerLocation}
-              restaurantLocation={orders[0]?.restaurantLocation}
-              captains={dummyCaptains}
-              onCaptainSelect={(captainId) => {
-                console.log(`Selected captain: ${captainId}`);
-              }}
-            />
+            {(() => {
+              const sel = orders.find(o => o.order_id === selectedOrderId) ?? orders[0];
+              const rest = sel?.restaurantLocation ?? { lat: 33.5138, lng: 36.2765 };
+              const cust = sel?.customerLocation ?? { lat: 33.515, lng: 36.28 };
+              return (
+                <AssignCaptainView
+                  orderId={sel?.order_id ?? 0}
+                  restaurant={{ lat: rest?.lat ?? 33.5138, lng: rest?.lng ?? 36.2765 }}
+                  customer={{ lat: cust?.lat ?? 33.515, lng: cust?.lng ?? 36.28 }}
+                  onWaiting={() => {
+                    if (!sel?.order_id) return;
+                    setAwaitingOrders(prev => ({ ...prev, [sel.order_id]: true }));
+                  }}
+                  onAssigned={async () => {
+                    // عند القبول: أزل حالة الانتظار وجدد البيانات
+                    if (sel?.order_id) {
+                      setAwaitingOrders(prev => {
+                        const copy = { ...prev };
+                        delete copy[sel.order_id as number];
+                        return copy;
+                      });
+                    }
+                    const [data, cnt] = await Promise.all([
+                      api.orders.list({ order_status: activeTab }),
+                      api.orders.counts(),
+                    ]);
+                    setOrders(data);
+                    setCounts(cnt);
+                    // في حال انتقال الطلب، اختر أول طلب متاح في تبويب تعيين كابتن
+                    if (activeTab === 'choose_captain') {
+                      if (data.length > 0) setSelectedOrderId(data[0].order_id);
+                      else setSelectedOrderId(null);
+                    }
+                  }}
+                />
+              );
+            })()}
             <div className="flex flex-col gap-4 mt-4">
               {loading ? (
                 <div className="text-center text-gray-400 py-8">{lang === 'ar' ? '...جاري التحميل' : 'Loading...'}</div>
@@ -172,6 +215,12 @@ export default function Dashboard() {
                     {...order} 
                     lang={lang}
                     status={(order as any).status ?? activeTab}
+                    current_tab={activeTab}
+                    awaitingCaptain={!!awaitingOrders[order.order_id]}
+                    onAssignCaptainClick={(oid)=> {
+                      setActiveTab('choose_captain');
+                      setSelectedOrderId(oid);
+                    }}
                     onStatusChange={handleStatusChange}
                     onInvoice={handleInvoice}
                     onNotes={handleNotes}

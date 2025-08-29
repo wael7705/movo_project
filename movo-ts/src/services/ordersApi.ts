@@ -1,5 +1,6 @@
 import axios from "axios";
 import { API_BASE } from "../config";
+import { makeAbortable } from "../api/http";
 
 // استخدام API_BASE الموحد بدلًا من قراءة env محليًا
 const API_URL: string = API_BASE;
@@ -35,12 +36,13 @@ function mapStatus(status?: string): string | undefined {
   return allowedStatuses.has(mapped) ? mapped : undefined;
 }
 
-export async function getOrdersByStatus(status?: string) {
+const _getOrdersByStatus = async (status?: string, signal?: AbortSignal) => {
   const mapped = mapStatus(status);
   const params = mapped ? { order_status: mapped } : undefined;
-  const res = await axios.get(`${API_URL}/orders`, { params });
+  const res = await axios.get(`${API_URL}/orders`, { params, signal });
   return res.data;
-}
+};
+export const getOrdersByStatus = makeAbortable(_getOrdersByStatus);
 
 export async function getOrder(orderId: number | string) {
   const res = await axios.get(`${API_URL}/orders/${orderId}`);

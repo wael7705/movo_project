@@ -8,6 +8,7 @@ import traceback
 from core.config import settings
 from core.db import engine
 from api.routes import orders, debug, selfcheck
+from api.routes import assign, ws
 
 # استيراد النماذج لضمان عمل النظام
 from models import Base, Customer, Restaurant, Order, Captain
@@ -57,6 +58,8 @@ async def health():
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["orders"])
 app.include_router(debug.router, prefix="/_debug", tags=["debug"])
 app.include_router(selfcheck.router, prefix="", tags=["selfcheck"])
+app.include_router(assign.router)
+app.include_router(ws.router)
 
 
 @app.on_event("startup")
