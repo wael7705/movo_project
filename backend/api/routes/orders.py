@@ -34,6 +34,7 @@ def serialize(o: Order) -> dict:
         "order_id": o.order_id,
         "customer_id": o.customer_id,
         "restaurant_id": o.restaurant_id,
+        "captain_id": o.captain_id,
         "status": o.status,
         "total_price_customer": o.total_price_customer,
         "delivery_fee": o.delivery_fee,

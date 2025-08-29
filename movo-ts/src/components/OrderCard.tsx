@@ -35,6 +35,7 @@ interface OrderCardProps {
   current_tab?: string;
   awaitingCaptain?: boolean;
   onAssignCaptainClick?: (orderId: number) => void;
+  onTrack?: (orderId: number) => void;
 }
 
 const statusColors: Record<string, string> = {
@@ -144,6 +145,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
   current_tab,
   awaitingCaptain,
   onAssignCaptainClick,
+  onTrack,
 }) => {
   // استخدام current_status إذا كان متوفراً، وإلا status
   const displayStatus = current_status || status;
@@ -247,6 +249,15 @@ const OrderCard: React.FC<OrderCardProps> = ({
             title={lang === 'ar' ? 'اختيار كابتن' : 'Assign Captain'}
           >
             🎯 <span className="sr-only">Assign</span>
+          </button>
+        )}
+        {current_tab === 'out_for_delivery' && (
+          <button
+            onClick={() => onTrack?.(order_id)}
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white text-sm px-3 py-2 hover:bg-indigo-700 transition"
+            title={lang === 'ar' ? 'تتبّع الطلب' : 'Track Order'}
+          >
+            📍 <span className="sr-only">Track</span>
           </button>
         )}
         {/* زر الانتقال/التالي */}

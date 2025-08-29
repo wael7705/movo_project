@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react';
 import Tabs from '../components/Tabs';
 import OrderCard from '../components/OrderCard';
 import LanguageSwitcher from '../components/LanguageSwitcher';
-import OrderMap from '../components/OrderMap';
 import AssignCaptainView from '../features/assign/AssignCaptainView';
-import { type Captain } from '../components/MapView';
 import api from '../lib/api';
+import OutForDeliveryView from '../features/delivery/OutForDeliveryView';
 
 const translations = {
   ar: {
@@ -42,6 +41,7 @@ export default function Dashboard() {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [awaitingOrders, setAwaitingOrders] = useState<Record<number, boolean>>({});
+  const [trackedOrderId, setTrackedOrderId] = useState<number | null>(null);
 
   const sections = ([
     { title: lang === 'ar' ? 'قيد الانتظار' : 'Pending', status: 'pending' },
@@ -112,7 +112,8 @@ export default function Dashboard() {
   };
 
   const handleTrack = (orderId: number) => {
-    console.log(`Track order ${orderId}`);
+    setTrackedOrderId(orderId);
+    setActiveTab('out_for_delivery');
   };
 
   const handleRate = (orderId: number) => {
@@ -134,13 +135,6 @@ export default function Dashboard() {
       console.error('Failed to create demo order:', err);
     }
   };
-
-  // مثال: يمكن لاحقًا جلب بيانات الكباتن من API
-  const dummyCaptains: Captain[] = [
-    { id: 'c1', name: lang === 'ar' ? 'الكابتن أحمد' : 'Captain Ahmad', coords: { lat: 33.516, lng: 36.277 }, orders: 2, dest: lang === 'ar' ? 'مطعم باب الحارة' : 'Bab Al Hara' },
-    { id: 'c2', name: lang === 'ar' ? 'الكابتن سامر' : 'Captain Samer', coords: { lat: 33.514, lng: 36.279 }, orders: 1, dest: lang === 'ar' ? 'مطعم الشام' : 'Al Sham' },
-    { id: 'c3', name: lang === 'ar' ? 'الكابتن ليلى' : 'Captain Layla', coords: { lat: 33.518, lng: 36.274 }, orders: 0, dest: '' },
-  ];
 
   return (
     <div className={`w-screen min-h-screen bg-gray-100 overflow-y-auto ${lang === 'ar' ? 'text-right' : 'text-left'}`}
@@ -274,15 +268,32 @@ export default function Dashboard() {
           </>
         ) : activeTab === 'out_for_delivery' ? (
           <>
-            <OrderMap
-              mode="track"
-              customerLocation={orders[0]?.customerLocation}
-              restaurantLocation={orders[0]?.restaurantLocation}
-              captains={dummyCaptains}
-              onTrackOrder={() => {
-                console.log('Track order clicked');
-              }}
-            />
+            {(() => {
+              const sel = trackedOrderId ? orders.find(o => o.order_id === trackedOrderId) : orders[0];
+              const rest = sel?.restaurantLocation ?? { lat: 33.5138, lng: 36.2765 };
+              const cust = sel?.customerLocation ?? { lat: 33.515, lng: 36.28 };
+              const capId = sel?.captain_id ?? null;
+              return (
+                <OutForDeliveryView
+                  orderId={sel?.order_id ?? 0}
+                  restaurant={{ lat: rest?.lat ?? 33.5138, lng: rest?.lng ?? 36.2765 }}
+                  customer={{ lat: cust?.lat ?? 33.515, lng: cust?.lng ?? 36.28 }}
+                  captainId={capId}
+                  onDelivered={async () => {
+                    await api.orders.next(sel?.order_id ?? 0);
+                    // حدث عدادات وقوائم
+                    const [data, cnt] = await Promise.all([
+                      api.orders.list({ order_status: activeTab }),
+                      api.orders.counts(),
+                    ]);
+                    setOrders(data);
+                    setCounts(cnt);
+                    // انقل المستخدم تلقائياً إلى تبويب تم التوصيل
+                    setActiveTab('delivered');
+                  }}
+                />
+              );
+            })()}
             <div className="flex flex-col gap-4 mt-4">
               {loading ? (
                 <div className="text-center text-gray-400 py-8">{lang === 'ar' ? '...جاري التحميل' : 'Loading...'}</div>
@@ -297,6 +308,7 @@ export default function Dashboard() {
                     {...order} 
                     lang={lang}
                     status={(order as any).status ?? activeTab}
+                    current_tab={activeTab}
                     onStatusChange={handleStatusChange}
                     onInvoice={handleInvoice}
                     onNotes={handleNotes}
