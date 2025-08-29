@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy import select, func
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +8,7 @@ import logging
 from core.status import compute_current_status, compute_substage, normalize_status, VALID
 from core.db import get_session
 from models.order import Order
+from models.note import Note
 from models.customer import Customer
 from models.restaurant import Restaurant
 
@@ -251,3 +252,85 @@ async def cancel_order(order_id: int, session: AsyncSession = Depends(get_sessio
     await session.refresh(order)
     
     return serialize(order)
+
+
+@router.patch("/{order_id}/problem", response_model=Dict[str, Any])
+async def mark_order_problem(order_id: int, session: AsyncSession = Depends(get_session)):
+    """Mark order as problem (moves to 'problem' tab)."""
+    result = await session.execute(select(Order).where(Order.order_id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Set status to problem
+    order.status = 'problem'
+
+    await session.commit()
+    await session.refresh(order)
+
+    return serialize(order)
+
+
+@router.patch("/{order_id}", response_model=Dict[str, Any])
+async def update_order_status(order_id: int, payload: Dict[str, Any] = Body(None), session: AsyncSession = Depends(get_session)):
+    """Generic status update endpoint: expects {"status": "..."}."""
+    result = await session.execute(select(Order).where(Order.order_id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    requested = normalize_status(payload.get("status")) if payload else None
+    if not requested or requested not in VALID:
+        raise HTTPException(status_code=422, detail="Invalid status")
+
+    # Apply status
+    order.status = requested
+
+    # Initialize processing substage when moving into processing with no substage
+    if requested == "processing" and not getattr(order, "current_stage_name", None):
+        order.current_stage_name = "waiting_approval"
+
+    await session.commit()
+    await session.refresh(order)
+
+    return serialize(order)
+
+
+# Notes endpoints (order-scoped)
+@router.get("/{order_id}/notes", response_model=List[Dict[str, Any]])
+async def list_order_notes(order_id: int, session: AsyncSession = Depends(get_session)):
+    result = await session.execute(select(Note).where((Note.target_type == 'order') & (Note.reference_id == order_id)).order_by(Note.created_at.desc()))
+    notes = result.scalars().all()
+    return [
+        {
+            "note_id": n.note_id,
+            "target_type": n.target_type,
+            "reference_id": n.reference_id,
+            "note_text": n.note_text,
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+        }
+        for n in notes
+    ]
+
+
+@router.post("/{order_id}/notes", response_model=Dict[str, Any])
+async def add_order_note(order_id: int, payload: Dict[str, Any] = Body(...), session: AsyncSession = Depends(get_session)):
+    text = (payload or {}).get("note_text")
+    if not text or not isinstance(text, str) or not text.strip():
+        raise HTTPException(status_code=422, detail="note_text is required")
+    # Ensure order exists
+    result = await session.execute(select(Order).where(Order.order_id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    n = Note(target_type='order', reference_id=order_id, note_text=text.strip())
+    session.add(n)
+    await session.commit()
+    await session.refresh(n)
+    return {
+        "note_id": n.note_id,
+        "target_type": n.target_type,
+        "reference_id": n.reference_id,
+        "note_text": n.note_text,
+        "created_at": n.created_at.isoformat() if n.created_at else None,
+    }

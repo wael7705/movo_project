@@ -7,8 +7,9 @@ from .customer import Customer
 from .restaurant import Restaurant
 from .order import Order
 from .captain import Captain
+from .note import Note
 
 # تصدير النماذج للاستخدام الخارجي
-__all__ = ['Base', 'Customer', 'Restaurant', 'Order', 'Captain']
+__all__ = ['Base', 'Customer', 'Restaurant', 'Order', 'Captain', 'Note']
 
 

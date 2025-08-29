@@ -35,11 +35,36 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+_PUBSUB_CHANNEL_PREFIX = "captain:"
 
 
 @router.websocket("/ws/captain/{captain_id}")
 async def ws_captain(websocket: WebSocket, captain_id: int):
     await manager.connect(captain_id, websocket)
+    # اشتراك اختياري عبر Redis لبث مشترك بين نسخ التطبيق
+    pubsub_task = None
+    try:
+        from core.redis import get_redis
+        import json
+
+        async def _pubsub_loop():
+            r = await get_redis()
+            if not r:
+                return
+            ch = _PUBSUB_CHANNEL_PREFIX + str(captain_id)
+            psub = r.pubsub()
+            await psub.subscribe(ch)
+            async for msg in psub.listen():
+                if msg and msg.get('type') == 'message':
+                    try:
+                        data = json.loads(msg.get('data'))
+                        await manager.send_json(captain_id, data)
+                    except Exception:
+                        pass
+
+        pubsub_task = asyncio.create_task(_pubsub_loop())
+    except Exception:
+        pubsub_task = None
 
     async def _pos_loop():
         base_lat = 33.5138 + random.uniform(-0.01, 0.01)
@@ -64,11 +89,7 @@ async def ws_captain(websocket: WebSocket, captain_id: int):
                 {"type": "pos", "captain_id": captain_id, "lat": lat, "lng": lng},
             )
             await asyncio.sleep(1)
-        # عند الوصول، أرسل delivered
-        await manager.send_json(
-            captain_id,
-            {"type": "delivered", "captain_id": captain_id},
-        )
+        await manager.send_json(captain_id, {"type": "delivered", "captain_id": captain_id})
 
     pos_task = asyncio.create_task(_pos_loop())
     route_task = None
@@ -79,7 +100,7 @@ async def ws_captain(websocket: WebSocket, captain_id: int):
                 continue
             mtype = msg.get("type")
             if mtype == "assign":
-                order_id = msg.get("order_id")
+                order_id = int(msg.get("order_id") or 0)
                 asyncio.create_task(
                     manager.send_json_after(
                         captain_id,
@@ -88,7 +109,6 @@ async def ws_captain(websocket: WebSocket, captain_id: int):
                     )
                 )
             elif mtype == "start_delivery":
-                # أوقف بث الموضع العشوائي
                 if pos_task and not pos_task.done():
                     pos_task.cancel()
                     with contextlib.suppress(Exception):
@@ -99,19 +119,21 @@ async def ws_captain(websocket: WebSocket, captain_id: int):
                 r_lng = float(rest.get("lng", 36.2765))
                 c_lat = float(cust.get("lat", 33.515))
                 c_lng = float(cust.get("lng", 36.28))
-                # ابدأ مسار مباشر من المطعم إلى الزبون
                 route_task = asyncio.create_task(_route_loop(r_lat, r_lng, c_lat, c_lng))
             elif mtype == "stop_delivery":
                 if route_task and not route_task.done():
                     route_task.cancel()
                     with contextlib.suppress(Exception):
                         await route_task
-                # استئناف البث العشوائي
                 if (not pos_task) or pos_task.done():
                     pos_task = asyncio.create_task(_pos_loop())
     except WebSocketDisconnect:
         pass
     finally:
+        if pubsub_task and not pubsub_task.done():
+            pubsub_task.cancel()
+            with contextlib.suppress(Exception):
+                await pubsub_task
         if route_task and not route_task.done():
             route_task.cancel()
             with contextlib.suppress(Exception):

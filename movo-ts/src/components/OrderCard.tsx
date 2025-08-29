@@ -4,6 +4,7 @@ type CustomerTier = 'regular' | 'vip' | 'movo_plus';
 
 interface OrderCardProps {
   order_id: number;
+  captain_id?: number;
   customer_name?: string;
   customerName?: string;
   customer_phone?: string;
@@ -36,6 +37,8 @@ interface OrderCardProps {
   awaitingCaptain?: boolean;
   onAssignCaptainClick?: (orderId: number) => void;
   onTrack?: (orderId: number) => void;
+  onRate?: (orderId: number) => void;
+  onNotes?: (orderId: number) => void;
 }
 
 const statusColors: Record<string, string> = {
@@ -116,6 +119,7 @@ function formatHMS(totalSeconds: number): string {
 
 const OrderCard: React.FC<OrderCardProps> = ({
   order_id,
+  captain_id,
   customer_name,
   customerName,
   customer_phone,
@@ -146,6 +150,8 @@ const OrderCard: React.FC<OrderCardProps> = ({
   awaitingCaptain,
   onAssignCaptainClick,
   onTrack,
+  onRate,
+  onNotes,
 }) => {
   // استخدام current_status إذا كان متوفراً، وإلا status
   const displayStatus = current_status || status;
@@ -154,6 +160,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
   const rName = restaurant_name ?? restaurantName;
   const payType = paymentType ?? payment_method;
   const dType = (deliveryType ?? (delivery_method === 'pick_up' ? 'pickup' : delivery_method ? 'movo' : undefined)) as string | undefined;
+  const effectiveTab = current_tab ?? displayStatus;
   const totalAmountValue = totalAmount ?? (typeof total_price_customer === 'string' ? parseFloat(total_price_customer) : total_price_customer);
   const amountIsHigh = (totalAmountValue ?? 0) > 300000;
   const totalDeliverySecComputed = totalDeliveryDurationSec;
@@ -240,55 +247,95 @@ const OrderCard: React.FC<OrderCardProps> = ({
           )}
         </div>
       </div>
-      {/* شريط الأزرار السفلي — لا تغيير بالمنطق */}
-      <div className="flex items-center justify-end gap-2 px-5 py-3 border-t bg-slate-50">
-        {current_tab === 'choose_captain' && (
+      {/* شريط الأزرار السفلي — مجموعتان على طرفين متقابلين */}
+      <div className="flex items-center justify-between px-5 py-3 border-t bg-slate-50">
+        {/* يسار: زر المشكلة الصغير + زر الملاحظة */}
+        <div className="flex items-center">
+          {effectiveTab !== 'problem' && (
+            <button
+              onClick={() => onStatusChange?.(order_id, 'problem')}
+              disabled={!onStatusChange}
+              className="inline-flex items-center gap-1 rounded-lg bg-yellow-100 text-yellow-800 border border-yellow-300 text-xs px-2 py-1 disabled:opacity-50 hover:bg-yellow-200 transition"
+              title={lang === 'ar' ? 'وضع الطلب كمشكلة' : 'Mark as Problem'}
+            >
+              ⚠️ <span className="sr-only">{lang === 'ar' ? 'مشكلة' : 'Problem'}</span>
+            </button>
+          )}
           <button
-            onClick={() => onAssignCaptainClick?.(order_id)}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 text-white text-sm px-3 py-2 hover:bg-emerald-700 transition"
-            title={lang === 'ar' ? 'اختيار كابتن' : 'Assign Captain'}
+            onClick={() => onNotes?.(order_id)}
+            className="ms-2 inline-flex items-center gap-1 rounded-lg bg-sky-100 text-sky-800 border border-sky-300 text-xs px-2 py-1 hover:bg-sky-200 transition"
+            title={lang === 'ar' ? 'إضافة/عرض ملاحظة' : 'Notes'}
           >
-            🎯 <span className="sr-only">Assign</span>
+            📝 <span className="sr-only">{lang === 'ar' ? 'ملاحظة' : 'Notes'}</span>
           </button>
-        )}
-        {current_tab === 'out_for_delivery' && (
-          <button
-            onClick={() => onTrack?.(order_id)}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white text-sm px-3 py-2 hover:bg-indigo-700 transition"
-            title={lang === 'ar' ? 'تتبّع الطلب' : 'Track Order'}
-          >
-            📍 <span className="sr-only">Track</span>
-          </button>
-        )}
-        {/* زر الانتقال/التالي */}
-        <button
-          onClick={() => onStatusChange?.(order_id, 'next')}
-          disabled={!onStatusChange}
-          className="inline-flex items-center gap-2 rounded-xl bg-blue-600 text-white text-sm px-3 py-2 disabled:opacity-50 hover:bg-blue-700 transition"
-          title={lang === 'ar' ? 'التالي / نقل التبويب' : 'Next / Advance'}
-        >
-          ➡️ <span className="sr-only">{lang === 'ar' ? 'التالي' : 'Next'}</span>
-        </button>
+        </div>
 
-        {/* زر الإلغاء */}
-        <button
-          onClick={() => onStatusChange?.(order_id, 'cancelled')}
-          disabled={!onStatusChange}
-          className="inline-flex items-center gap-2 rounded-xl bg-rose-600 text-white text-sm px-3 py-2 disabled:opacity-50 hover:bg-rose-700 transition"
-          title={lang === 'ar' ? 'إلغاء الطلب' : 'Cancel Order'}
-        >
-          ❌ <span className="sr-only">{lang === 'ar' ? 'إلغاء' : 'Cancel'}</span>
-        </button>
+        {/* يمين: بقية الأزرار */}
+        <div className="flex items-center gap-2">
+          {current_tab === 'choose_captain' && (
+            <button
+              onClick={() => onAssignCaptainClick?.(order_id)}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 text-white text-sm px-3 py-2 hover:bg-emerald-700 transition"
+              title={lang === 'ar' ? 'اختيار كابتن' : 'Assign Captain'}
+            >
+              🎯 <span className="sr-only">Assign</span>
+            </button>
+          )}
+          {current_tab === 'out_for_delivery' && (
+            <button
+              onClick={() => captain_id ? onTrack?.(order_id) : undefined}
+              disabled={!captain_id}
+              className={`inline-flex items-center gap-2 rounded-xl text-sm px-3 py-2 transition ${captain_id ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+              title={captain_id ? (lang === 'ar' ? 'تتبّع الطلب' : 'Track Order') : (lang === 'ar' ? 'لا يوجد كابتن معيّن' : 'No captain assigned')}
+            >
+              📍 <span className="sr-only">Track</span>
+            </button>
+          )}
+          {/* زر الانتقال/التالي — مخفي في تبويب تعيين كابتن وتم التوصيل وملغي */}
+          {effectiveTab !== 'choose_captain' && effectiveTab !== 'delivered' && effectiveTab !== 'cancelled' && (
+            <button
+              onClick={() => onStatusChange?.(order_id, 'next')}
+              disabled={!onStatusChange}
+              className="inline-flex items-center gap-2 rounded-xl bg-blue-600 text-white text-sm px-3 py-2 disabled:opacity-50 hover:bg-blue-700 transition"
+              title={lang === 'ar' ? 'التالي / نقل التبويب' : 'Next / Advance'}
+            >
+              ➡️ <span className="sr-only">{lang === 'ar' ? 'التالي' : 'Next'}</span>
+            </button>
+          )}
 
-        {/* زر الفاتورة */}
-        <button
-          onClick={() => (onInvoiceClick ? onInvoiceClick() : onInvoice?.(order_id))}
-          disabled={!(onInvoiceClick || onInvoice)}
-          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 text-white text-sm px-3 py-2 disabled:opacity-50 hover:bg-emerald-700 transition"
-          title={lang === 'ar' ? 'عرض الفاتورة' : 'View Invoice'}
-        >
-          🧾 <span className="sr-only">{lang === 'ar' ? 'الفاتورة' : 'Invoice'}</span>
-        </button>
+          {/* زر الإلغاء — مخفي ضمن تبويب ملغي وتم التوصيل */}
+          {effectiveTab !== 'cancelled' && effectiveTab !== 'delivered' && (
+            <button
+              onClick={() => onStatusChange?.(order_id, 'cancelled')}
+              disabled={!onStatusChange}
+              className="inline-flex items-center gap-2 rounded-xl bg-rose-600 text-white text-sm px-3 py-2 disabled:opacity-50 hover:bg-rose-700 transition"
+              title={lang === 'ar' ? 'إلغاء الطلب' : 'Cancel Order'}
+            >
+              ❌ <span className="sr-only">{lang === 'ar' ? 'إلغاء' : 'Cancel'}</span>
+            </button>
+          )}
+
+          {/* زر الفاتورة / التقييم */}
+          {effectiveTab === 'delivered' ? (
+            <button
+              onClick={() => onRate?.(order_id)}
+              disabled={!onRate}
+              className="inline-flex items-center gap-2 rounded-xl bg-amber-600 text-white text-sm px-3 py-2 disabled:opacity-50 hover:bg-amber-700 transition"
+              title={lang === 'ar' ? 'تقييم الطلب' : 'Rate Order'}
+            >
+              ⭐ <span className="sr-only">{lang === 'ar' ? 'تقييم' : 'Rate'}</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => (onInvoiceClick ? onInvoiceClick() : onInvoice?.(order_id))}
+              disabled={!(onInvoiceClick || onInvoice)}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 text-white text-sm px-3 py-2 disabled:opacity-50 hover:bg-emerald-700 transition"
+              title={lang === 'ar' ? 'عرض الفاتورة' : 'View Invoice'}
+            >
+              🧾 <span className="sr-only">{lang === 'ar' ? 'الفاتورة' : 'Invoice'}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* // REMOVED OLD BUTTONS (icons...) — UI only, keep logic elsewhere unchanged */}

@@ -18,19 +18,17 @@ async function _fetchJSON(url: string, signal?: AbortSignal) {
 
 export const fetchCounts = makeAbortable((signal?: AbortSignal) => _fetchJSON(`${BASE}/orders/counts`, signal));
 
+const listAbortable = makeAbortable((params?: Record<string, string | number | boolean>, signal?: AbortSignal) => {
+  const qs = params ? `?${new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]))}` : '';
+  return _fetchJSON(`${BASE}/orders${qs}`, signal);
+});
+
 export const api = {
   health: () => fetch(`${BASE}/db_ping`).then(toJson),
-  // ملاحظة: الواجهة الأمامية تعتمد الآن على /orders الموحّد وإرجاع current_status
   orders: {
-    list: (params?: Record<string, string | number | boolean>) => {
-      const qs = params
-        ? `?${new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]))}`
-        : '';
-      return fetch(`${BASE}/orders${qs}`).then(toJson);
-    },
+    list: (params?: Record<string, string | number | boolean>) => listAbortable(params),
     byId: (id: number | string) => fetch(`${BASE}/orders/${id}`).then(toJson),
     updateStatus: async (id: number | string, status: string) => {
-      // تطبيع الحالة لتتوافق مع enum الموجود في قاعدة البيانات
       const map: Record<string, string> = {
         captain_assigned: 'choose_captain',
         choose_captain: 'choose_captain',
@@ -44,11 +42,20 @@ export const api = {
         pickup: 'pickup',
       };
       const normalized = map[status] ?? status;
-      const res = await fetch(`${BASE}/orders/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: normalized }),
-      }).then(toJson);
+      // استخدم مسارات محددة للحالات الخاصة
+      let res;
+      if (normalized === 'problem') {
+        res = await fetch(`${BASE}/orders/${id}/problem`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+        }).then(toJson);
+      } else {
+        res = await fetch(`${BASE}/orders/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: normalized }),
+        }).then(toJson);
+      }
       await queryClient.invalidateQueries({ queryKey: ["orders"] });
       return res;
     },
@@ -78,6 +85,15 @@ export const api = {
     },
     notes: {
       listByOrder: (id: number | string) => fetch(`${BASE}/orders/${id}/notes`).then(toJson),
+      add: (id: number | string, note_text: string) =>
+        fetch(`${BASE}/orders/${id}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ note_text }),
+        }).then(toJson),
+    },
+    insights: {
+      order: (id: number | string) => fetch(`${BASE.replace('/api/v1','')}/api/v1/analytics/insights/order/${id}`).then(toJson),
     },
     counts: () => fetch(`${BASE}/orders/counts`).then(toJson),
   },

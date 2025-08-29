@@ -5,6 +5,7 @@ import LanguageSwitcher from '../components/LanguageSwitcher';
 import AssignCaptainView from '../features/assign/AssignCaptainView';
 import api from '../lib/api';
 import OutForDeliveryView from '../features/delivery/OutForDeliveryView';
+import NotesModal from '../components/NotesModal';
 
 const translations = {
   ar: {
@@ -42,6 +43,7 @@ export default function Dashboard() {
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [awaitingOrders, setAwaitingOrders] = useState<Record<number, boolean>>({});
   const [trackedOrderId, setTrackedOrderId] = useState<number | null>(null);
+  const [notesForOrderId, setNotesForOrderId] = useState<number | null>(null);
 
   const sections = ([
     { title: lang === 'ar' ? 'قيد الانتظار' : 'Pending', status: 'pending' },
@@ -52,7 +54,6 @@ export default function Dashboard() {
     { title: lang === 'ar' ? 'ملغي' : 'Cancelled', status: 'cancelled' },
     { title: lang === 'ar' ? 'مشكلة' : 'Problem', status: 'problem' },
     { title: lang === 'ar' ? 'مؤجل' : 'Deferred', status: 'deferred' },
-    { title: lang === 'ar' ? 'استلام شخصي' : 'Pickup', status: 'pickup' },
   ]);
 
   useEffect(() => {
@@ -86,6 +87,8 @@ export default function Dashboard() {
     try {
       if (newStatus === 'cancelled') {
         await api.orders.cancel(orderId);
+      } else if (newStatus === 'problem') {
+        await api.orders.updateStatus(orderId, 'problem');
       } else {
         // اتبع مسار next في الباكيند فقط، ولا تغيّر التبويب
         await api.orders.next(orderId);
@@ -108,7 +111,7 @@ export default function Dashboard() {
   };
 
   const handleNotes = (orderId: number) => {
-    console.log(`Notes for order ${orderId}`);
+    setNotesForOrderId(orderId);
   };
 
   const handleTrack = (orderId: number) => {
@@ -252,6 +255,7 @@ export default function Dashboard() {
                             key={order.order_id} 
                             {...order} 
                             lang={lang}
+                            current_tab={activeTab}
                             onStatusChange={handleStatusChange}
                             onInvoice={handleInvoice}
                             onNotes={handleNotes}
@@ -338,6 +342,7 @@ export default function Dashboard() {
                     {...order} 
                     lang={lang}
                     status={(order as any).status ?? activeTab}
+                    current_tab={activeTab}
                     onStatusChange={handleStatusChange}
                     onInvoice={handleInvoice}
                     onNotes={handleNotes}
@@ -349,6 +354,8 @@ export default function Dashboard() {
             </div>
           </>
         )}
+        {/* Notes Modal */}
+        <NotesModal orderId={notesForOrderId ?? 0} open={!!notesForOrderId} onClose={()=>setNotesForOrderId(null)} lang={lang} />
       </div>
     </div>
   );

@@ -21,7 +21,7 @@ const translations = {
       { title: 'ملغي', status: 'cancelled' },
       { title: 'مشكلة', status: 'problem' },
       { title: 'مؤجل', status: 'deferred' },
-      { title: 'استلام شخصي', status: 'pickup' },
+      
     ],
     processingSubstages: [
       { key: 'waiting_approval', label: 'انتظار الموافقة' },
@@ -48,7 +48,7 @@ const translations = {
       { title: 'Cancelled', status: 'cancelled' },
       { title: 'Problem', status: 'problem' },
       { title: 'Deferred', status: 'deferred' },
-      { title: 'Pickup', status: 'pickup' },
+      
     ],
     processingSubstages: [
       { key: 'waiting_approval', label: 'Waiting Approval' },
@@ -127,6 +127,8 @@ export default function Dashboard() {
       setLoading(true);
       if (newStatus === 'cancelled') {
         await api.orders.cancel(orderId);
+      } else if (newStatus === 'problem') {
+        await api.orders.updateStatus(orderId, 'problem');
       } else {
         // نوحّد كل الأزرار التي تعني الانتقال إلى التالي تحت /next
         await api.orders.next(orderId);
@@ -241,6 +243,7 @@ export default function Dashboard() {
                     key={order.order_id}
                     {...order}
                     lang={lang}
+                    current_tab={activeTab}
                     onStatusChange={handleStatusChange}
                   />
                 ))
@@ -292,6 +295,7 @@ export default function Dashboard() {
                           key={order.order_id}
                           {...order}
                           lang={lang}
+                          current_tab={activeTab}
                           onStatusChange={handleStatusChange}
                         />
                       ))}
@@ -324,6 +328,7 @@ export default function Dashboard() {
                   key={order.order_id}
                   {...order}
                   lang={lang}
+                  current_tab={activeTab}
                   onStatusChange={handleStatusChange}
                 />
               ))

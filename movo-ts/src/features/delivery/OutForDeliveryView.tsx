@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Popup } from 'react-leaflet';
 import type { LatLngExpression } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { restaurantIcon, customerIcon, captainIcon } from '../../components/map/markers';
+import { createCaptainSocketWS } from '../../lib/socket';
 
 export default function OutForDeliveryView({
   orderId,
@@ -19,7 +20,6 @@ export default function OutForDeliveryView({
 }) {
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null);
   const [route, setRoute] = useState<LatLngExpression[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
 
   const center = useMemo<{ lat: number; lng: number}>(() => ({
     lat: (restaurant.lat + customer.lat) / 2,
@@ -28,20 +28,12 @@ export default function OutForDeliveryView({
 
   useEffect(() => {
     if (!captainId) return;
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws/captain/${captainId}`);
-    wsRef.current = ws;
+    const ws = createCaptainSocketWS(captainId);
     ws.onopen = () => {
-      // ابدأ رحلة التوصيل بمسار واضح من المطعم إلى الزبون
-      ws.send(JSON.stringify({
-        type: 'start_delivery',
-        order_id: orderId,
-        restaurant,
-        customer,
-      }));
+      ws.send(JSON.stringify({ type: 'start_delivery', order_id: orderId, restaurant, customer }));
       setRoute([[restaurant.lat, restaurant.lng], [customer.lat, customer.lng]]);
     };
-    ws.onmessage = async (ev) => {
+    ws.onmessage = (ev) => {
       try {
         const msg = JSON.parse(ev.data);
         if (msg?.type === 'pos') {
@@ -52,12 +44,7 @@ export default function OutForDeliveryView({
         }
       } catch {}
     };
-    ws.onclose = () => {};
-    ws.onerror = () => {};
-    return () => {
-      try { ws.close(); } catch {}
-      wsRef.current = null;
-    };
+    return () => { try { ws.close(); } catch {} };
   }, [captainId, orderId, restaurant, customer, onDelivered]);
 
   return (

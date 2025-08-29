@@ -8,6 +8,10 @@ import traceback
 from core.config import settings
 from core.db import engine
 from api.routes import orders, debug, selfcheck
+from api.routes import analytics
+import os
+import socketio
+from realtime.sio import sio
 from api.routes import assign, ws
 
 # استيراد النماذج لضمان عمل النظام
@@ -60,6 +64,11 @@ app.include_router(debug.router, prefix="/_debug", tags=["debug"])
 app.include_router(selfcheck.router, prefix="", tags=["selfcheck"])
 app.include_router(assign.router)
 app.include_router(ws.router)
+app.include_router(analytics.router)
+
+# Socket.IO ASGI wrapper
+SOCKET_IO_PATH = os.getenv("SOCKET_IO_PATH", "socket.io")
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path=SOCKET_IO_PATH)
 
 
 @app.on_event("startup")
