@@ -1,4 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { subscribeTabNotify } from '../realtime/notify';
+import GlassToast from '../components/GlassToast';
 import Tabs from '../components/Tabs';
 import OrderCard from '../components/OrderCard';
 import LanguageSwitcher from '../components/LanguageSwitcher';
@@ -68,11 +71,28 @@ const translations = {
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('pending');
+  const { tab } = useParams();
+  const navigate = useNavigate();
   const [lang, setLang] = useState<'ar' | 'en'>('ar');
   const [orders, setOrders] = useState<any[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{open:boolean; title:string; message:string; level?:'info'|'success'|'warning'|'error'}>({open:false, title:'', message:''});
+  
+  // Initialize from URL (?tab=...) and listen to back/forward
+  useEffect(() => {
+    const map: Record<string, string> = { assign: 'choose_captain', issue: 'problem' };
+    const applyFromURL = () => {
+      const params = new URLSearchParams(window.location.search);
+      const q = ((tab as string) || params.get('tab') || '').trim().toLowerCase();
+      if (q) setActiveTab(map[q] ?? q);
+    };
+    applyFromURL();
+    const onPop = () => applyFromURL();
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [tab]);
   const t = translations[lang];
 
   useEffect(() => {
@@ -81,6 +101,16 @@ export default function Dashboard() {
       .then((data) => setCounts(data))
       .catch(() => {});
   }, [lang]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeTabNotify(activeTab, (msg: any) => {
+      const text = typeof msg === 'string' ? msg : (msg?.message ?? '');
+      if (text) setToast({ open: true, title: 'Notification', message: text, level: 'success' });
+    });
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe();
+    };
+  }, [activeTab]);
 
   useEffect(() => {
     setLoading(true);
@@ -177,7 +207,10 @@ export default function Dashboard() {
     <div className={`w-screen min-h-screen bg-gray-100 overflow-y-auto ${lang === 'ar' ? 'text-right' : 'text-left'}`}
       dir={lang === 'ar' ? 'rtl' : 'ltr'}>
       <div className="max-w-full px-4 py-8 mx-auto">
-        <h1 className="text-2xl font-bold text-purple-800 mb-8">{t.dashboardTitle}</h1>
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-2xl font-bold text-purple-800">{t.dashboardTitle}</h1>
+          <a href="/supervisor" className="text-sm text-violet-700 hover:underline">Go to Supervisor ▸</a>
+        </div>
         <LanguageSwitcher currentLang={lang} onSwitch={setLang} />
         
         {/* أزرار إنشاء الطلبات الوهمية */}
@@ -204,7 +237,12 @@ export default function Dashboard() {
             value: section.status,
           }))}
           active={activeTab}
-          onChange={setActiveTab}
+          onChange={(v)=>{
+            setActiveTab(v);
+            const rev: Record<string,string> = { choose_captain:'assign', problem:'issue' };
+            const slug = rev[v] ?? v;
+            navigate(`/t/${slug}`, { replace: false });
+          }}
           dir={lang === 'ar' ? 'rtl' : 'ltr'}
         />
         
@@ -336,6 +374,7 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+      <GlassToast open={toast.open} onClose={()=>setToast(t=>({ ...t, open:false }))} title={toast.title} message={toast.message} level={toast.level} position={lang==='ar' ? 'left' : 'right'} />
     </div>
   );
 }

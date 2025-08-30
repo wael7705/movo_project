@@ -1,5 +1,5 @@
 from . import Base
-from sqlalchemy import Column, Integer, String, Numeric
+from sqlalchemy import Column, Integer, String, Numeric, Boolean
 
 
 class Restaurant(Base):
@@ -9,5 +9,6 @@ class Restaurant(Base):
     name = Column(String(100), nullable=False)
     latitude = Column(Numeric(10, 8), nullable=False)
     longitude = Column(Numeric(11, 8), nullable=False)
+    visible = Column(Boolean, default=True)
 
 

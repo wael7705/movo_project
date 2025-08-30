@@ -15,7 +15,8 @@ interface TabsProps {
 
 const Tabs: React.FC<TabsProps> = ({ tabs, active, onChange, dir = 'rtl', className }) => {
   // اعكس الترتيب عند اللغة العربية
-  const displayTabs = dir === 'rtl' ? [...tabs].reverse() : tabs;
+  const safeTabs = Array.isArray(tabs) ? tabs : [];
+  const displayTabs = dir === 'rtl' ? [...safeTabs].reverse() : safeTabs;
   return (
     <nav
       className={`w-full border-b border-gray-200 flex ${dir === 'rtl' ? 'flex-row-reverse justify-end' : 'flex-row justify-start'} ${className || ''}`}

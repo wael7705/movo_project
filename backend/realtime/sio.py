@@ -2,15 +2,12 @@ import os
 import socketio
 
 REDIS_URL = os.getenv("REDIS_URL")
-SOCKET_IO_PATH = os.getenv("SOCKET_IO_PATH", "socket.io")
 
 manager = socketio.AsyncRedisManager(REDIS_URL) if REDIS_URL else None
 
 sio = socketio.AsyncServer(
     async_mode="asgi",
     cors_allowed_origins="*",
-    ping_timeout=25,
-    ping_interval=20,
     client_manager=manager,
 )
 
@@ -47,7 +44,10 @@ async def leave_order(sid, data):
 
 
 async def notify_tab(tab: str, payload: dict):
+    # keep existing channel for compatibility
     await sio.emit("notify", payload, room=f"tab:{tab}")
+    # emit also to a scoped event name for tab notifications
+    await sio.emit(f"notify_tab:{tab}", payload.get("message") if isinstance(payload, dict) else payload)
 
 
 async def notify_order(order_id: int, payload: dict):

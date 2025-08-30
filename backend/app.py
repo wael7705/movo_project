@@ -13,6 +13,7 @@ import os
 import socketio
 from realtime.sio import sio
 from api.routes import assign, ws
+from api.routes import admin as admin_router
 
 # استيراد النماذج لضمان عمل النظام
 from models import Base, Customer, Restaurant, Order, Captain
@@ -65,9 +66,10 @@ app.include_router(selfcheck.router, prefix="", tags=["selfcheck"])
 app.include_router(assign.router)
 app.include_router(ws.router)
 app.include_router(analytics.router)
+app.include_router(admin_router.router)
 
 # Socket.IO ASGI wrapper
-SOCKET_IO_PATH = os.getenv("SOCKET_IO_PATH", "socket.io")
+SOCKET_IO_PATH = os.getenv("SOCKET_IO_PATH", "/socket.io")
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app, socketio_path=SOCKET_IO_PATH)
 
 

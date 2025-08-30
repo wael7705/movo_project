@@ -6,6 +6,7 @@ import AssignCaptainView from '../features/assign/AssignCaptainView';
 import api from '../lib/api';
 import OutForDeliveryView from '../features/delivery/OutForDeliveryView';
 import NotesModal from '../components/NotesModal';
+import GlassToast from '../components/GlassToast';
 
 const translations = {
   ar: {
@@ -44,6 +45,8 @@ export default function Dashboard() {
   const [awaitingOrders, setAwaitingOrders] = useState<Record<number, boolean>>({});
   const [trackedOrderId, setTrackedOrderId] = useState<number | null>(null);
   const [notesForOrderId, setNotesForOrderId] = useState<number | null>(null);
+  const [ordersWithNotes, setOrdersWithNotes] = useState<Record<number, boolean>>({});
+  const [toast, setToast] = useState<{open:boolean; title:string; message:string; level?:'info'|'success'|'warning'|'error'}>({open:false, title:'', message:''});
 
   const sections = ([
     { title: lang === 'ar' ? 'قيد الانتظار' : 'Pending', status: 'pending' },
@@ -69,6 +72,16 @@ export default function Dashboard() {
   useEffect(() => {
     api.orders.counts().then(setCounts).catch(() => {});
   }, [activeTab, lang]);
+
+  // مزامنة حالة وجود ملاحظات للطلبات الظاهرة بعد التحميل
+  useEffect(() => {
+    if (!orders || orders.length === 0) return;
+    const ids = orders.map(o => o.order_id).join(',');
+    fetch(`/api/v1/orders/notes/flags?ids=${ids}`)
+      .then(r => (r.ok ? r.json() : {}))
+      .then((m) => setOrdersWithNotes(m || {}))
+      .catch(() => {});
+  }, [orders]);
 
   // حافظ على طلب مختار لتبويب تعيين كابتن
   useEffect(() => {
@@ -112,6 +125,28 @@ export default function Dashboard() {
 
   const handleNotes = (orderId: number) => {
     setNotesForOrderId(orderId);
+  };
+
+  // عندما يغلق المودال، حدّث الهايلايت إن وُجدت ملاحظات
+  const handleNotesClosed = async () => {
+    if (!notesForOrderId) {
+      setNotesForOrderId(null);
+      return;
+    }
+    try {
+      const list = await api.orders.notes.listByOrder(notesForOrderId);
+      setOrdersWithNotes((prev) => ({ ...prev, [notesForOrderId]: Array.isArray(list) && list.length > 0 }));
+      if (Array.isArray(list) && list.length > 0) {
+        setToast({open:true, title: lang==='ar' ? 'تم حفظ الملاحظة' : 'Note Saved', message: `${lang==='ar' ? 'تم حفظ الملاحظة للطلب' : 'Note saved for order'} #${notesForOrderId}`, level:'success'});
+      }
+    } catch {}
+    setNotesForOrderId(null);
+  };
+
+  const handleNoteSavedInstant = (note: { orderId: number }) => {
+    // فعّل الهايلايت فورًا دون انتظار إغلاق المودال أو إعادة التحميل
+    setOrdersWithNotes((prev) => ({ ...prev, [note.orderId]: true }));
+    setToast({open:true, title: lang==='ar' ? 'تم حفظ الملاحظة' : 'Note Saved', message: `${lang==='ar' ? 'تم حفظ الملاحظة للطلب' : 'Note saved for order'} #${note.orderId}`, level:'success'});
   };
 
   const handleTrack = (orderId: number) => {
@@ -214,6 +249,7 @@ export default function Dashboard() {
                     status={(order as any).status ?? activeTab}
                     current_tab={activeTab}
                     awaitingCaptain={!!awaitingOrders[order.order_id]}
+                    notesHighlight={!!ordersWithNotes[order.order_id]}
                     onAssignCaptainClick={(oid)=> {
                       setActiveTab('choose_captain');
                       setSelectedOrderId(oid);
@@ -259,6 +295,7 @@ export default function Dashboard() {
                             onStatusChange={handleStatusChange}
                             onInvoice={handleInvoice}
                             onNotes={handleNotes}
+                            notesHighlight={!!ordersWithNotes[order.order_id]}
                             onTrack={handleTrack}
                             onRate={handleRate}
                           />
@@ -316,6 +353,7 @@ export default function Dashboard() {
                     onStatusChange={handleStatusChange}
                     onInvoice={handleInvoice}
                     onNotes={handleNotes}
+                    notesHighlight={!!ordersWithNotes[order.order_id]}
                     onTrack={handleTrack}
                     onRate={handleRate}
                   />
@@ -346,6 +384,7 @@ export default function Dashboard() {
                     onStatusChange={handleStatusChange}
                     onInvoice={handleInvoice}
                     onNotes={handleNotes}
+                    notesHighlight={!!ordersWithNotes[order.order_id]}
                     onTrack={handleTrack}
                     onRate={handleRate}
                   />
@@ -355,7 +394,8 @@ export default function Dashboard() {
           </>
         )}
         {/* Notes Modal */}
-        <NotesModal orderId={notesForOrderId ?? 0} open={!!notesForOrderId} onClose={()=>setNotesForOrderId(null)} lang={lang} />
+        <NotesModal orderId={notesForOrderId ?? 0} open={!!notesForOrderId} onClose={handleNotesClosed} lang={lang} onSaved={handleNoteSavedInstant} />
+        <GlassToast open={toast.open} onClose={()=>setToast(t=>({...t,open:false}))} title={toast.title} message={toast.message} level={toast.level} position={lang==='ar' ? 'left' : 'right'} />
       </div>
     </div>
   );

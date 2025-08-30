@@ -6,9 +6,10 @@ interface NotesModalProps {
   open: boolean;
   onClose: () => void;
   lang?: 'ar' | 'en';
+  onSaved?: (note: { orderId: number; note_id: number; note_text: string; created_at?: string; source?: string }) => void;
 }
 
-export default function NotesModal({ orderId, open, onClose, lang = 'ar' }: NotesModalProps) {
+export default function NotesModal({ orderId, open, onClose, lang = 'ar', onSaved }: NotesModalProps) {
   const [notes, setNotes] = useState<Array<{ note_id: number; note_text: string; created_at?: string }>>([]);
   const [insights, setInsights] = useState<string[]>([]);
   const [text, setText] = useState('');
@@ -33,9 +34,10 @@ export default function NotesModal({ orderId, open, onClose, lang = 'ar' }: Note
     if (!text.trim()) return;
     try {
       setSaving(true);
-      const n = await api.orders.notes.add(orderId, text.trim());
+      const n = await api.orders.notes.add(orderId, text.trim(), 'employee');
       setNotes((prev) => [{ note_id: n.note_id, note_text: n.note_text, created_at: n.created_at }, ...prev]);
       setText('');
+      onSaved?.({ orderId, note_id: n.note_id, note_text: n.note_text, created_at: n.created_at, source: n.source });
     } catch (e) {
       // ignore
     } finally {

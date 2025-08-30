@@ -39,6 +39,7 @@ interface OrderCardProps {
   onTrack?: (orderId: number) => void;
   onRate?: (orderId: number) => void;
   onNotes?: (orderId: number) => void;
+  notesHighlight?: boolean;
 }
 
 const statusColors: Record<string, string> = {
@@ -152,6 +153,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
   onTrack,
   onRate,
   onNotes,
+  notesHighlight,
 }) => {
   // استخدام current_status إذا كان متوفراً، وإلا status
   const displayStatus = current_status || status;
@@ -263,7 +265,11 @@ const OrderCard: React.FC<OrderCardProps> = ({
           )}
           <button
             onClick={() => onNotes?.(order_id)}
-            className="ms-2 inline-flex items-center gap-1 rounded-lg bg-sky-100 text-sky-800 border border-sky-300 text-xs px-2 py-1 hover:bg-sky-200 transition"
+            className={`ms-2 inline-flex items-center gap-1 rounded-lg text-xs px-2 py-1 transition border ${
+              notesHighlight
+                ? 'bg-violet-200 text-violet-900 border-violet-400 shadow animate-pulse'
+                : 'bg-sky-100 text-sky-800 border-sky-300 hover:bg-sky-200'
+            }`}
             title={lang === 'ar' ? 'إضافة/عرض ملاحظة' : 'Notes'}
           >
             📝 <span className="sr-only">{lang === 'ar' ? 'ملاحظة' : 'Notes'}</span>

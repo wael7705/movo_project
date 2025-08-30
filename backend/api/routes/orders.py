@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy import select, func
+from sqlalchemy import text as sa_text, literal_column
 from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Dict, Any
@@ -9,6 +10,8 @@ from core.status import compute_current_status, compute_substage, normalize_stat
 from core.db import get_session
 from models.order import Order
 from models.note import Note
+from realtime.ws_notifications import notify_tab
+from realtime.sio import notify_tab as notify_tab2
 from models.customer import Customer
 from models.restaurant import Restaurant
 
@@ -299,7 +302,14 @@ async def update_order_status(order_id: int, payload: Dict[str, Any] = Body(None
 # Notes endpoints (order-scoped)
 @router.get("/{order_id}/notes", response_model=List[Dict[str, Any]])
 async def list_order_notes(order_id: int, session: AsyncSession = Depends(get_session)):
-    result = await session.execute(select(Note).where((Note.target_type == 'order') & (Note.reference_id == order_id)).order_by(Note.created_at.desc()))
+    result = await session.execute(
+        select(Note)
+        .where(
+            (Note.reference_id == order_id)
+            & (Note.target_type == literal_column("'order'::note_target_enum"))
+        )
+        .order_by(Note.created_at.desc())
+    )
     notes = result.scalars().all()
     return [
         {
@@ -308,6 +318,7 @@ async def list_order_notes(order_id: int, session: AsyncSession = Depends(get_se
             "reference_id": n.reference_id,
             "note_text": n.note_text,
             "created_at": n.created_at.isoformat() if n.created_at else None,
+            "source": getattr(n, 'source', 'employee'),
         }
         for n in notes
     ]
@@ -316,6 +327,7 @@ async def list_order_notes(order_id: int, session: AsyncSession = Depends(get_se
 @router.post("/{order_id}/notes", response_model=Dict[str, Any])
 async def add_order_note(order_id: int, payload: Dict[str, Any] = Body(...), session: AsyncSession = Depends(get_session)):
     text = (payload or {}).get("note_text")
+    source = (payload or {}).get("source") or 'employee'
     if not text or not isinstance(text, str) or not text.strip():
         raise HTTPException(status_code=422, detail="note_text is required")
     # Ensure order exists
@@ -323,14 +335,62 @@ async def add_order_note(order_id: int, payload: Dict[str, Any] = Body(...), ses
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    n = Note(target_type='order', reference_id=order_id, note_text=text.strip())
-    session.add(n)
+
+    # Insert with explicit cast to avoid enum/varchar mismatch
+    ins = sa_text(
+        """
+        INSERT INTO notes(target_type, reference_id, note_text, source)
+        VALUES (CAST(:t AS note_target_enum), :rid, :txt, :src)
+        RETURNING note_id, created_at
+        """
+    )
+    row = (await session.execute(ins, {"t": "order", "rid": order_id, "txt": text.strip(), "src": source})).first()
     await session.commit()
-    await session.refresh(n)
+    note_id, created_at = row[0], row[1]
+
+    # إشعار تبويب مطابق لحالة الطلب الحالية
+    try:
+        result = await session.execute(select(Order).where(Order.order_id == order_id))
+        ord2 = result.scalar_one_or_none()
+        if ord2:
+            tab = compute_current_status(ord2)
+            payload = {"title": "تم حفظ الملاحظة", "message": f"تم حفظ الملاحظة للطلب #{order_id}", "order_id": order_id, "level": "success"}
+            await notify_tab(tab, payload)
+            try:
+                await notify_tab2(tab, payload)
+            except Exception:
+                pass
+    except Exception:
+        pass
     return {
-        "note_id": n.note_id,
-        "target_type": n.target_type,
-        "reference_id": n.reference_id,
-        "note_text": n.note_text,
-        "created_at": n.created_at.isoformat() if n.created_at else None,
+        "note_id": int(note_id),
+        "target_type": "order",
+        "reference_id": order_id,
+        "note_text": text.strip(),
+        "created_at": created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at),
+        "source": source,
     }
+
+
+@router.get("/notes/flags", response_model=Dict[int, bool])
+async def notes_flags(ids: str = Query(default=""), session: AsyncSession = Depends(get_session)):
+    """Return mapping of order_id -> has_notes for given comma-separated ids."""
+    try:
+        order_ids = [int(x) for x in ids.split(',') if x.strip().isdigit()]
+    except Exception:
+        order_ids = []
+    if not order_ids:
+        return {}
+    q = (
+        select(Note.reference_id, func.count().label('cnt'))
+        .where(
+            (Note.reference_id.in_(order_ids))
+            & (Note.target_type == literal_column("'order'::note_target_enum"))
+        )
+        .group_by(Note.reference_id)
+    )
+    rows = (await session.execute(q)).all()
+    flags: Dict[int, bool] = {oid: False for oid in order_ids}
+    for ref_id, cnt in rows:
+        flags[int(ref_id)] = int(cnt) > 0
+    return flags

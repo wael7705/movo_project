@@ -85,11 +85,11 @@ export const api = {
     },
     notes: {
       listByOrder: (id: number | string) => fetch(`${BASE}/orders/${id}/notes`).then(toJson),
-      add: (id: number | string, note_text: string) =>
+      add: (id: number | string, note_text: string, source: 'employee'|'ai'='employee') =>
         fetch(`${BASE}/orders/${id}/notes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ note_text }),
+          body: JSON.stringify({ note_text, source }),
         }).then(toJson),
     },
     insights: {

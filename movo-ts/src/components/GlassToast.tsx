@@ -6,12 +6,14 @@ export default function GlassToast({
   title,
   message,
   level = 'info',
+  position = 'center',
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   message: string;
   level?: 'info' | 'success' | 'warning' | 'error';
+  position?: 'left' | 'center' | 'right';
 }) {
   useEffect(() => {
     if (!open) return;
@@ -27,9 +29,10 @@ export default function GlassToast({
     error: 'backdrop-blur bg-white/20 border-rose-400 text-rose-900',
   }[level];
 
+  const justify = position === 'left' ? 'justify-start ps-4' : position === 'right' ? 'justify-end pe-4' : 'justify-center';
   return (
-    <div className="fixed top-4 inset-x-0 z-[9999] flex justify-center">
-      <div className={`max-w-xl w-[92%] shadow-xl border ${color} rounded-2xl px-4 py-3`}> 
+    <div className={`fixed top-4 inset-x-0 z-[9999] flex ${justify}`}>
+      <div className={`max-w-xl w-[92%] shadow-xl border ${color} rounded-2xl px-4 py-3`}>
         <div className="font-semibold mb-1">{title}</div>
         <div className="text-sm opacity-90">{message}</div>
       </div>

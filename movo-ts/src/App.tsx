@@ -1,13 +1,11 @@
 
-import AdminDashboard from './pages/AdminDashboard'; // واجهة لوحة تحكم المشرف
-import './styles/tailwind.css'; // استدعاء تنسيقات Tailwind (إذا ما كنت ضايفه بعد)
+import './styles/tailwind.css';
+import Dashboard from './pages/AdminDashboard';
 
-function App() {
+export default function App() {
   return (
     <main className="min-h-screen bg-gray-100 text-gray-900 font-sans">
-      <AdminDashboard />
+      <Dashboard />
     </main>
   );
 }
-
-export default App;
