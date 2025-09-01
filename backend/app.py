@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from loguru import logger
 import traceback
 
@@ -18,7 +19,23 @@ from api.routes import admin as admin_router
 # استيراد النماذج لضمان عمل النظام
 from models import Base, Customer, Restaurant, Order, Captain
 
-app = FastAPI()
+class EncodingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if "application/json" in response.headers.get("content-type", ""):
+            response.headers["content-type"] = "application/json; charset=utf-8"
+        return response
+
+app = FastAPI(
+    title="Movo System API",
+    description="نظام إدارة الطلبات والتوصيل",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+
+# إضافة middleware للترميز
+app.add_middleware(EncodingMiddleware)
 
 # CORS (dev-friendly). إذا كان DEBUG مفعّلاً نسمح بأي أصل محلي، بدون Credentials
 if settings.DEBUG:

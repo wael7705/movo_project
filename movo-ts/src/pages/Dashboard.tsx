@@ -7,6 +7,7 @@ import OrderCard from '../components/OrderCard';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import MapView, { type Captain } from '../components/MapView';
 import AssignCaptainView from '../features/assign/AssignCaptainView';
+import RatingModal from '../components/RatingModal';
 import api from '../lib/api';
 import { getOrdersByStatus } from '../services/ordersApi';
 
@@ -79,6 +80,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{open:boolean; title:string; message:string; level?:'info'|'success'|'warning'|'error'}>({open:false, title:'', message:''});
+  const [ratingModal, setRatingModal] = useState<{isOpen: boolean; orderId: number | null}>({isOpen: false, orderId: null});
+  
+  // Debug: مراقبة تغييرات ratingModal
+  useEffect(() => {
+    console.log('🔴 ratingModal state changed:', ratingModal);
+  }, [ratingModal]);
   
   // Initialize from URL (?tab=...) and listen to back/forward
   useEffect(() => {
@@ -94,6 +101,41 @@ export default function Dashboard() {
     return () => window.removeEventListener('popstate', onPop);
   }, [tab]);
   const t = translations[lang];
+
+  const handleRate = (orderId: number) => {
+    console.log('🔴 handleRate called with orderId:', orderId);
+    console.log('🔴 Current ratingModal state:', ratingModal);
+    setRatingModal({ isOpen: true, orderId });
+    console.log('🔴 ratingModal state set to:', { isOpen: true, orderId });
+  };
+
+  const handleRatingSubmit = async (rating: number, comment: string) => {
+    if (!ratingModal.orderId) return;
+    
+    try {
+      console.log(`Rating submitted for order ${ratingModal.orderId}: ${rating} stars, comment: ${comment}`);
+      
+      // إرسال التقييم للباكيند
+      await api.orders.rating.add(ratingModal.orderId, rating, comment);
+      
+      setToast({
+        open: true,
+        title: lang === 'ar' ? 'تم التقييم' : 'Rating Submitted',
+        message: `تم تقييم الطلب #${ratingModal.orderId} بـ ${rating} نجوم`,
+        level: 'success'
+      });
+      
+      setRatingModal({ isOpen: false, orderId: null });
+    } catch (error) {
+      console.error('Error submitting rating:', error);
+      setToast({
+        open: true,
+        title: lang === 'ar' ? 'خطأ في التقييم' : 'Rating Error',
+        message: lang === 'ar' ? 'حدث خطأ أثناء إرسال التقييم' : 'Error submitting rating',
+        level: 'error'
+      });
+    }
+  };
 
   useEffect(() => {
     api.orders
@@ -124,12 +166,17 @@ export default function Dashboard() {
   const getCount = (status: string) => counts[status] ?? 0;
 
   const visibleOrders = useMemo(() => {
-    return orders.filter((o) => {
+    console.log('🔴 visibleOrders filter - activeTab:', activeTab, 'orders count:', orders.length);
+    const filtered = orders.filter((o) => {
       const st = String(o.current_status || o.status || '').toLowerCase();
+      console.log('🔴 Order', o.order_id, 'status:', st, 'activeTab:', activeTab, 'match:', st === activeTab);
       if (activeTab === 'problem') return st === 'problem';
       if (activeTab === 'cancelled') return st === 'cancelled';
       return st === activeTab;
     });
+    console.log('🔴 visibleOrders result count:', filtered.length);
+    console.log('🔴 visibleOrders orders:', filtered.map(o => ({ id: o.order_id, status: o.status })));
+    return filtered;
   }, [orders, activeTab]);
 
   const createDemoOrder = async () => {
@@ -238,6 +285,7 @@ export default function Dashboard() {
           }))}
           active={activeTab}
           onChange={(v)=>{
+            console.log('🔴 Tab changed from', activeTab, 'to', v);
             setActiveTab(v);
             const rev: Record<string,string> = { choose_captain:'assign', problem:'issue' };
             const slug = rev[v] ?? v;
@@ -283,6 +331,7 @@ export default function Dashboard() {
                     lang={lang}
                     current_tab={activeTab}
                     onStatusChange={handleStatusChange}
+                    onRate={handleRate}
                   />
                 ))
               )}
@@ -335,6 +384,7 @@ export default function Dashboard() {
                           lang={lang}
                           current_tab={activeTab}
                           onStatusChange={handleStatusChange}
+                          onRate={handleRate}
                         />
                       ))}
                     </div>
@@ -362,18 +412,29 @@ export default function Dashboard() {
               <div className="text-center text-gray-400 py-8">{t.noOrders}</div>
             ) : (
               visibleOrders.map((order) => (
-                <OrderCard
-                  key={order.order_id}
-                  {...order}
-                  lang={lang}
-                  current_tab={activeTab}
-                  onStatusChange={handleStatusChange}
-                />
+                                        <OrderCard
+                          key={order.order_id}
+                          {...order}
+                          lang={lang}
+                          current_tab={activeTab}
+                          onStatusChange={handleStatusChange}
+                          onRate={handleRate}
+                        />
               ))
             )}
           </div>
         )}
       </div>
+
+      {/* Rating Modal */}
+      <RatingModal
+        isOpen={ratingModal.isOpen}
+        onClose={() => setRatingModal({ isOpen: false, orderId: null })}
+        orderId={ratingModal.orderId || 0}
+        onSubmit={handleRatingSubmit}
+        lang={lang}
+      />
+
       <GlassToast open={toast.open} onClose={()=>setToast(t=>({ ...t, open:false }))} title={toast.title} message={toast.message} level={toast.level} position={lang==='ar' ? 'left' : 'right'} />
     </div>
   );

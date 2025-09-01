@@ -1,7 +1,7 @@
 """Enable PostGIS and add GEOGRAPHY columns with GIST indexes
 
-Revision ID: 005
-Revises: 004
+    Revision ID: 005_enable_postgis_and_geography
+    Revises: 004_geo_double_precision_and_indexes
 Create Date: 2025-08-29 00:10:00.000000
 
 """
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = '005'
-down_revision = '004'
+revision = '005_enable_postgis_and_geography'
+down_revision = '004_geo_double_precision_and_indexes'
 branch_labels = None
 depends_on = None
 

@@ -1,7 +1,7 @@
 """Create lightweight notes table if not exists
 
-Revision ID: 007
-Revises: 006
+    Revision ID: 007_create_notes_table
+    Revises: 006_idempotency_and_order_events
 Create Date: 2025-08-29 00:00:00.000000
 
 """
@@ -9,8 +9,8 @@ from alembic import op
 
 
 # revision identifiers, used by Alembic.
-revision = '007'
-down_revision = '006'
+revision = '007_create_notes_table'
+down_revision = '006_idempotency_and_order_events'
 branch_labels = None
 depends_on = None
 

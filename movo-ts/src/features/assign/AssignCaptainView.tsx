@@ -30,7 +30,23 @@ export default function AssignCaptainView(props: {
   const hoverWsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    fetch(`/api/v1/assign/orders/${orderId}/candidates`).then(r => r.json()).then(setCands).catch(() => {});
+    console.log('Loading candidates for order', orderId);
+    fetch(`/api/v1/assign/orders/${orderId}/candidates`)
+      .then(r => {
+        console.log('Candidates response status:', r.status);
+        if (!r.ok) {
+          throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+        }
+        return r.json();
+      })
+      .then(data => {
+        console.log('Candidates loaded:', data);
+        setCands(data);
+      })
+      .catch(error => {
+        console.error('Failed to load candidates:', error);
+        setCands([]);
+      });
   }, [orderId]);
 
   useEffect(() => {
@@ -75,33 +91,87 @@ export default function AssignCaptainView(props: {
   const assign = async (cid: number) => {
     if (assigningId === cid) return;
     setAssigningId(cid);
-    const r = await fetch(`/api/v1/assign/orders/${orderId}/assign`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Idempotency-Key': (globalThis.crypto as any)?.randomUUID?.() ?? (Math.random().toString(36).slice(2) + Date.now()),
-      },
-      body: JSON.stringify({ captain_id: cid }),
-    });
-    if (!r.ok) return;
-    onWaiting?.(cid);
-    setSelectedCaptainId(cid);
-    const ws = createCaptainSocketWS(cid);
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'assign', order_id: orderId }));
-    };
-    ws.onmessage = async (ev) => {
-      try {
-        const msg = JSON.parse(ev.data);
-        if (msg?.type === 'accepted' && msg.order_id === orderId) {
-          await api.orders.next(orderId);
-          onAssigned?.();
-          ws.close();
-          setAssigningId(null);
+    
+    try {
+      console.log('Assigning captain', cid, 'to order', orderId);
+      
+      const response = await fetch(`/api/v1/assign/orders/${orderId}/assign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': (globalThis.crypto as any)?.randomUUID?.() ?? (Math.random().toString(36).slice(2) + Date.now()),
+        },
+        body: JSON.stringify({ captain_id: cid }),
+      });
+      
+      console.log('Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Failed to assign captain:', response.status, response.statusText, errorText);
+        setAssigningId(null);
+        return;
+      }
+      
+      const result = await response.json();
+      console.log('Assign result:', result);
+      
+      if (result.ok) {
+        console.log('Captain assigned successfully');
+        onWaiting?.(cid);
+        setSelectedCaptainId(cid);
+        
+        // إنشاء WebSocket connection
+        try {
+          const ws = createCaptainSocketWS(cid);
+          ws.onopen = () => {
+            console.log('WebSocket connected for captain', cid);
+            ws.send(JSON.stringify({ type: 'assign', order_id: orderId }));
+          };
+          
+          ws.onmessage = async (ev) => {
+            try {
+              const msg = JSON.parse(ev.data);
+              console.log('WebSocket message:', msg);
+              if (msg?.type === 'accepted' && msg.order_id === orderId) {
+                console.log('Captain accepted order');
+                await api.orders.next(orderId);
+                onAssigned?.();
+                ws.close();
+                setAssigningId(null);
+              }
+            } catch (error) {
+              console.error('WebSocket message error:', error);
+            }
+          };
+          
+          ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            setAssigningId(null);
+          };
+          
+          ws.onclose = () => {
+            console.log('WebSocket closed for captain', cid);
+          };
+        } catch (wsError) {
+          console.error('WebSocket creation error:', wsError);
         }
-      } catch {}
-    };
-    setTimeout(() => setAssigningId(null), 5000);
+        
+        // timeout للتأكد من عدم تعليق الزر
+        setTimeout(() => {
+          if (assigningId === cid) {
+            console.log('Timeout reached, resetting assigningId');
+            setAssigningId(null);
+          }
+        }, 10000);
+      } else {
+        console.error('Assign result not ok:', result);
+        setAssigningId(null);
+      }
+    } catch (error) {
+      console.error('Assign captain error:', error);
+      setAssigningId(null);
+    }
   };
 
   return (

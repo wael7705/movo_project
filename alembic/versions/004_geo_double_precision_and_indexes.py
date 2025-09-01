@@ -1,7 +1,7 @@
 """Geo precision and indexes
 
-Revision ID: 004
-Revises: 003
+    Revision ID: 004_geo_double_precision_and_indexes
+    Revises: 003_add_customer_cancelled_count
 Create Date: 2025-08-29 00:00:00.000000
 
 """
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = '004'
-down_revision = '003'
+revision = '004_geo_double_precision_and_indexes'
+down_revision = '003_add_customer_cancelled_count'
 branch_labels = None
 depends_on = None
 

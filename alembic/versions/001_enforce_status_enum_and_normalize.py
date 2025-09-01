@@ -1,7 +1,7 @@
 """Enforce single active status, normalize enum, and fix demo creation
 
-Revision ID: 001
-Revises: 
+    Revision ID: 001_enforce_status_enum_and_normalize
+    Revises: 
 Create Date: 2024-12-19 10:00:00.000000
 
 """
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '001'
+revision = '001_enforce_status_enum_and_normalize'
 down_revision = None
 branch_labels = None
 depends_on = None

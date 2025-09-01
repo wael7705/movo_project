@@ -1,7 +1,7 @@
 """Idempotency keys and order events log
 
-Revision ID: 006
-Revises: 005
+    Revision ID: 006_idempotency_and_order_events
+    Revises: 005_enable_postgis_and_geography
 Create Date: 2025-08-29 00:20:00.000000
 
 """
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = '006'
-down_revision = '005'
+revision = '006_idempotency_and_order_events'
+down_revision = '005_enable_postgis_and_geography'
 branch_labels = None
 depends_on = None
 

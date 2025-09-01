@@ -132,7 +132,6 @@ const OrderCard: React.FC<OrderCardProps> = ({
   payment_method,
   paymentType,
   status,
-  current_status,
   substage,
   vip,
   lang = 'ar',
@@ -155,8 +154,8 @@ const OrderCard: React.FC<OrderCardProps> = ({
   onNotes,
   notesHighlight,
 }) => {
-  // استخدام current_status إذا كان متوفراً، وإلا status
-  const displayStatus = current_status || status;
+  // استخدام status فقط لأن current_status غير موجود في قاعدة البيانات
+  const displayStatus = status;
   const name = customer_name ?? customerName;
   const phone = customer_phone ?? customerPhone;
   const rName = restaurant_name ?? restaurantName;
@@ -322,9 +321,17 @@ const OrderCard: React.FC<OrderCardProps> = ({
           )}
 
           {/* زر الفاتورة / التقييم */}
-          {effectiveTab === 'delivered' ? (
+          {displayStatus === 'delivered' ? (
             <button
-              onClick={() => onRate?.(order_id)}
+              onClick={() => {
+                console.log('🔴 Rating button clicked for order:', order_id);
+                console.log('🔴 onRate function:', onRate);
+                if (onRate) {
+                  onRate(order_id);
+                } else {
+                  console.error('❌ onRate function is not defined!');
+                }
+              }}
               disabled={!onRate}
               className="inline-flex items-center gap-2 rounded-xl bg-amber-600 text-white text-sm px-3 py-2 disabled:opacity-50 hover:bg-amber-700 transition"
               title={lang === 'ar' ? 'تقييم الطلب' : 'Rate Order'}

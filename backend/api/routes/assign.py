@@ -10,7 +10,7 @@ from fastapi import Depends
 import asyncio
 import json
 
-from core.db import get_session
+from core.db import get_session, AsyncSessionLocal
 from models.order import Order
 from models.restaurant import Restaurant
 from models.captain import Captain
@@ -103,59 +103,82 @@ class AssignIn(BaseModel):
 
 
 @router.post("/orders/{order_id}/assign")
-async def assign(order_id: int, body: AssignIn, session: AsyncSession = Depends(get_session), Idempotency_Key: str | None = Header(default=None)):
+async def assign(order_id: int, body: AssignIn, Idempotency_Key: str | None = Header(default=None)):
     # تحقق idempotency اختياري: إذا تم إرسال نفس المفتاح سابقًا، نتجاهل التكرار
     if Idempotency_Key:
         try:
-            await session.execute(sa_text("INSERT INTO idempotency_keys(key) VALUES (:k) ON CONFLICT DO NOTHING"), {"k": Idempotency_Key})
-            rows = (await session.execute(sa_text("SELECT key FROM idempotency_keys WHERE key=:k"), {"k": Idempotency_Key})).all()
-            if not rows:
-                return {"ok": True, "duplicate": True}
+            async with AsyncSessionLocal() as idempotency_session:
+                await idempotency_session.execute(sa_text("INSERT INTO idempotency_keys(key) VALUES (:k) ON CONFLICT DO NOTHING"), {"k": Idempotency_Key})
+                rows = (await idempotency_session.execute(sa_text("SELECT key FROM idempotency_keys WHERE key=:k"), {"k": Idempotency_Key})).all()
+                if not rows:
+                    return {"ok": True, "duplicate": True}
+                await idempotency_session.commit()
         except Exception:
             pass
-    result = await session.execute(select(Order).where(Order.order_id == order_id))
-    order = result.scalar_one_or_none()
-    if not order:
-        raise HTTPException(404, detail="Order not found")
-    try:
-        if hasattr(order, 'captain_id'):
-            setattr(order, 'captain_id', body.captain_id)
-        if hasattr(order, 'status'):
-            setattr(order, 'status', 'choose_captain')
-        if hasattr(order, 'current_status'):
-            setattr(order, 'current_status', 'choose_captain')
-        await session.commit()
-    except Exception:
-        await session.rollback()
-        raise
+    
+    # استخدام جلسة جديدة لضمان نظافتها
+    async with AsyncSessionLocal() as clean_session:
+        try:
+            # إعادة تعيين الجلسة للتأكد من نظافتها
+            await clean_session.rollback()
+            
+            result = await clean_session.execute(select(Order).where(Order.order_id == order_id))
+            order = result.scalar_one_or_none()
+            if not order:
+                raise HTTPException(404, detail="Order not found")
+            
+            # تحديث الطلب
+            if hasattr(order, 'captain_id'):
+                setattr(order, 'captain_id', body.captain_id)
+            if hasattr(order, 'status'):
+                setattr(order, 'status', 'choose_captain')
+            if hasattr(order, 'current_status'):
+                setattr(order, 'current_status', 'choose_captain')
+            
+            await clean_session.commit()
+            
+            # بثّ حدث التعيين عبر Redis (اختياري)
+            try:
+                r = await get_redis()
+                if r:
+                    channel = f"captain:{body.captain_id}"
+                    await r.publish(channel, json.dumps({"type": "assigned", "order_id": order_id, "captain_id": body.captain_id}))
+            except Exception:
+                pass
+                
+            # سجل الحدث في order_events باستخدام جلسة جديدة
+            try:
+                async with AsyncSessionLocal() as event_session:
+                    await event_session.execute(sa_text("INSERT INTO order_events(order_id, event_type, payload) VALUES (:oid, 'assigned', CAST(:p AS JSONB))"), {"oid": order_id, "p": json.dumps({"captain_id": body.captain_id})})
+                    await event_session.commit()
+            except Exception:
+                pass
 
-    # بثّ حدث التعيين عبر Redis (اختياري)
-    try:
-        r = await get_redis()
-        if r:
-            channel = f"captain:{body.captain_id}"
-            await r.publish(channel, json.dumps({"type": "assigned", "order_id": order_id, "captain_id": body.captain_id}))
-        # سجل الحدث في order_events
-        await session.execute(sa_text("INSERT INTO order_events(order_id, event_type, payload) VALUES (:oid, 'assigned', CAST(:p AS JSONB))"), {"oid": order_id, "p": json.dumps({"captain_id": body.captain_id})})
-        await session.commit()
-    except Exception:
-        pass
-
-    # إرسال قبول محاكى بعد 3 ثوانٍ عبر WS
-    try:
-        asyncio.create_task(
-            manager.send_json_after(
-                body.captain_id,
-                {"type": "accepted", "captain_id": body.captain_id, "order_id": order_id},
-                3.0,
-            )
-        )
-        # سجل accepted أيضاً
-        await session.execute(sa_text("INSERT INTO order_events(order_id, event_type, payload) VALUES (:oid, 'accepted', CAST(:p AS JSONB))"), {"oid": order_id, "p": json.dumps({"captain_id": body.captain_id})})
-        await session.commit()
-    except Exception:
-        pass
-    return {"ok": True}
+            # إرسال قبول محاكى بعد 3 ثوانٍ عبر WS
+            try:
+                asyncio.create_task(
+                    manager.send_json_after(
+                        body.captain_id,
+                        {"type": "accepted", "captain_id": body.captain_id, "order_id": order_id},
+                        3.0,
+                    )
+                )
+            except Exception:
+                pass
+                
+            # سجل accepted أيضاً باستخدام جلسة جديدة
+            try:
+                async with AsyncSessionLocal() as event_session:
+                    await event_session.execute(sa_text("INSERT INTO order_events(order_id, event_type, payload) VALUES (:oid, 'accepted', CAST(:p AS JSONB))"), {"oid": order_id, "p": json.dumps({"captain_id": body.captain_id})})
+                    await event_session.commit()
+            except Exception:
+                pass
+                
+            return {"ok": True}
+            
+        except Exception as e:
+            await clean_session.rollback()
+            raise HTTPException(500, detail=f"Failed to assign captain: {str(e)}")
 
 
 class StartDeliveryBody(BaseModel):

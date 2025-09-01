@@ -10,6 +10,7 @@ from core.status import compute_current_status, compute_substage, normalize_stat
 from core.db import get_session
 from models.order import Order
 from models.note import Note
+from models.rating import Rating
 from realtime.ws_notifications import notify_tab
 from realtime.sio import notify_tab as notify_tab2
 from models.customer import Customer
@@ -339,12 +340,12 @@ async def add_order_note(order_id: int, payload: Dict[str, Any] = Body(...), ses
     # Insert with explicit cast to avoid enum/varchar mismatch
     ins = sa_text(
         """
-        INSERT INTO notes(target_type, reference_id, note_text, source)
-        VALUES (CAST(:t AS note_target_enum), :rid, :txt, :src)
+        INSERT INTO notes(note_type, target_type, reference_id, note_text, source)
+        VALUES (CAST(:nt AS note_type_enum), CAST(:t AS note_target_enum), :rid, :txt, :src)
         RETURNING note_id, created_at
         """
     )
-    row = (await session.execute(ins, {"t": "order", "rid": order_id, "txt": text.strip(), "src": source})).first()
+    row = (await session.execute(ins, {"nt": "order", "t": "order", "rid": order_id, "txt": text.strip(), "src": source})).first()
     await session.commit()
     note_id, created_at = row[0], row[1]
 
@@ -394,3 +395,96 @@ async def notes_flags(ids: str = Query(default=""), session: AsyncSession = Depe
     for ref_id, cnt in rows:
         flags[int(ref_id)] = int(cnt) > 0
     return flags
+
+
+# Rating endpoints (order-scoped)
+@router.get("/{order_id}/rating", response_model=Dict[str, Any])
+async def get_order_rating(order_id: int, session: AsyncSession = Depends(get_session)):
+    """Get rating for a specific order."""
+    result = await session.execute(
+        select(Rating)
+        .where(Rating.order_id == order_id)
+        .order_by(Rating.timestamp.desc())
+        .limit(1)
+    )
+    rating = result.scalar_one_or_none()
+    
+    if not rating:
+        return {"order_id": order_id, "rating": None}
+    
+    return {
+        "order_id": order_id,
+        "rating_id": rating.rating_id,
+        "order_emoji_score": rating.order_emoji_score,
+        "order_comment": rating.order_comment,
+        "timestamp": rating.timestamp.isoformat() if rating.timestamp else None,
+    }
+
+
+@router.post("/{order_id}/rating", response_model=Dict[str, Any])
+async def add_order_rating(order_id: int, payload: Dict[str, Any] = Body(...), session: AsyncSession = Depends(get_session)):
+    """Add rating for a specific order."""
+    rating_score = (payload or {}).get("rating")
+    comment = (payload or {}).get("comment", "")
+    
+    if not rating_score or not isinstance(rating_score, int) or rating_score < 1 or rating_score > 5:
+        raise HTTPException(status_code=422, detail="rating must be an integer between 1 and 5")
+    
+    # Ensure order exists
+    result = await session.execute(select(Order).where(Order.order_id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Check if rating already exists for this order
+    existing_result = await session.execute(
+        select(Rating).where(Rating.order_id == order_id)
+    )
+    existing_rating = existing_result.scalar_one_or_none()
+    
+    if existing_rating:
+        # Update existing rating
+        existing_rating.order_emoji_score = rating_score
+        existing_rating.order_comment = comment
+        await session.commit()
+        await session.refresh(existing_rating)
+        
+        rating_data = {
+            "order_id": order_id,
+            "rating_id": existing_rating.rating_id,
+            "order_emoji_score": existing_rating.order_emoji_score,
+            "order_comment": existing_rating.order_comment,
+            "timestamp": existing_rating.timestamp.isoformat() if existing_rating.timestamp else None,
+        }
+    else:
+        # Create new rating
+        new_rating = Rating(
+            order_id=order_id,
+            order_emoji_score=rating_score,
+            order_comment=comment
+        )
+        session.add(new_rating)
+        await session.commit()
+        await session.refresh(new_rating)
+        
+        rating_data = {
+            "order_id": order_id,
+            "rating_id": new_rating.rating_id,
+            "order_emoji_score": new_rating.order_emoji_score,
+            "order_comment": new_rating.order_comment,
+            "timestamp": new_rating.timestamp.isoformat() if new_rating.timestamp else None,
+        }
+    
+    # إشعار تبويب مطابق لحالة الطلب الحالية
+    try:
+        tab = compute_current_status(order)
+        payload = {"title": "تم التقييم", "message": f"تم تقييم الطلب #{order_id} بـ {rating_score} نجوم", "order_id": order_id, "level": "success"}
+        await notify_tab(tab, payload)
+        try:
+            await notify_tab2(tab, payload)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    
+    return rating_data

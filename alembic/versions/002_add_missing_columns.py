@@ -1,7 +1,7 @@
 """Add missing columns to orders table
 
-Revision ID: 002
-Revises: 001
+    Revision ID: 002_add_missing_columns
+    Revises: 001_enforce_status_enum_and_normalize
 Create Date: 2024-12-19 22:10:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '002'
-down_revision = '001'
+revision = '002_add_missing_columns'
+down_revision = '001_enforce_status_enum_and_normalize'
 branch_labels = None
 depends_on = None
 

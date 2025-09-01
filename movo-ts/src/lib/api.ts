@@ -92,6 +92,15 @@ export const api = {
           body: JSON.stringify({ note_text, source }),
         }).then(toJson),
     },
+    rating: {
+      get: (id: number | string) => fetch(`${BASE}/orders/${id}/rating`).then(toJson),
+      add: (id: number | string, rating: number, comment: string = '') =>
+        fetch(`${BASE}/orders/${id}/rating`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rating, comment }),
+        }).then(toJson),
+    },
     insights: {
       order: (id: number | string) => fetch(`${BASE.replace('/api/v1','')}/api/v1/analytics/insights/order/${id}`).then(toJson),
     },
