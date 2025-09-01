@@ -6,6 +6,10 @@ export const queryClient = new QueryClient();
 
 async function toJson(response: Response) {
   if (!response.ok) {
+    const isDev = import.meta.env.DEV;
+    if (isDev) {
+      console.error('API Error:', response.status, response.statusText);
+    }
     throw new Error(`${response.status} ${response.statusText}`);
   }
   return response.json();
@@ -79,6 +83,15 @@ export const api = {
       const res = await fetch(`${BASE}/orders/${id}/cancel`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+      }).then(toJson);
+      await queryClient.invalidateQueries({ queryKey: ["orders"] });
+      return res;
+    },
+    resolve: async (id: number | string, status: string) => {
+      const res = await fetch(`${BASE}/orders/${id}/resolve`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
       }).then(toJson);
       await queryClient.invalidateQueries({ queryKey: ["orders"] });
       return res;

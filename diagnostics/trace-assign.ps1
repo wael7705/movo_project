@@ -75,6 +75,3 @@ Write-Host "Ready. Open UI and click Assign Captain for order $OrderId (captain 
 Write-Host "Press Ctrl+C to stop. Then: Get-Job | Stop-Job *; Remove-Job *"
 
 Wait-Job -Any $jobs | Out-Null
-
-# Usage example
-# powershell -NoProfile -ExecutionPolicy Bypass -File .\trace-assign.ps1 -OrderId 9 -CaptainId 5

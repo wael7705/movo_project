@@ -40,6 +40,7 @@ interface OrderCardProps {
   onRate?: (orderId: number) => void;
   onNotes?: (orderId: number) => void;
   notesHighlight?: boolean;
+  onResolve?: (order: any) => void; // زر بسط لحل المشكلة
 }
 
 const statusColors: Record<string, string> = {
@@ -153,6 +154,7 @@ const OrderCard: React.FC<OrderCardProps> = ({
   onRate,
   onNotes,
   notesHighlight,
+  onResolve,
 }) => {
   // استخدام status فقط لأن current_status غير موجود في قاعدة البيانات
   const displayStatus = status;
@@ -165,6 +167,19 @@ const OrderCard: React.FC<OrderCardProps> = ({
   const totalAmountValue = totalAmount ?? (typeof total_price_customer === 'string' ? parseFloat(total_price_customer) : total_price_customer);
   const amountIsHigh = (totalAmountValue ?? 0) > 300000;
   const totalDeliverySecComputed = totalDeliveryDurationSec;
+  
+  // Debug: طباعة معلومات التشخيص
+  const isDev = import.meta.env.DEV;
+  if (isDev) {
+    console.log('🔧 OrderCard Debug:', {
+      order_id,
+      status: displayStatus,
+      current_tab,
+      effectiveTab,
+      onResolve: !!onResolve,
+      shouldShowResolve: effectiveTab === 'problem' && onResolve
+    });
+  }
   
   return (
     <div
@@ -296,8 +311,25 @@ const OrderCard: React.FC<OrderCardProps> = ({
               📍 <span className="sr-only">Track</span>
             </button>
           )}
-          {/* زر الانتقال/التالي — مخفي في تبويب تعيين كابتن وتم التوصيل وملغي */}
-          {effectiveTab !== 'choose_captain' && effectiveTab !== 'delivered' && effectiveTab !== 'cancelled' && (
+          {/* زر بسط في تبويب المشكلة */}
+          {effectiveTab === 'problem' && typeof onResolve === 'function' && (
+            <button
+              onClick={() => onResolve({
+                order_id,
+                status,
+                customer_name: name,
+                restaurant_name: rName,
+                total_price_customer: totalAmountValue
+              })}
+              className="inline-flex items-center gap-2 rounded-xl bg-green-600 text-white text-sm px-3 py-2 hover:bg-green-700 transition"
+              title={lang === 'ar' ? 'بسط الطلب / حل المشكلة' : 'Resolve Order / Fix Problem'}
+            >
+              🔧 <span className="sr-only">{lang === 'ar' ? 'بسط' : 'Resolve'}</span>
+            </button>
+          )}
+          
+          {/* زر الانتقال/التالي — مخفي في تبويب تعيين كابتن وتم التوصيل وملغي ومشكلة */}
+          {effectiveTab !== 'choose_captain' && effectiveTab !== 'delivered' && effectiveTab !== 'cancelled' && effectiveTab !== 'problem' && (
             <button
               onClick={() => onStatusChange?.(order_id, 'next')}
               disabled={!onStatusChange}
@@ -324,11 +356,13 @@ const OrderCard: React.FC<OrderCardProps> = ({
           {displayStatus === 'delivered' ? (
             <button
               onClick={() => {
-                console.log('🔴 Rating button clicked for order:', order_id);
-                console.log('🔴 onRate function:', onRate);
+                if (isDev) {
+                  console.log('🔴 Rating button clicked for order:', order_id);
+                  console.log('🔴 onRate function:', onRate);
+                }
                 if (onRate) {
                   onRate(order_id);
-                } else {
+                } else if (isDev) {
                   console.error('❌ onRate function is not defined!');
                 }
               }}

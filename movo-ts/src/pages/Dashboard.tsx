@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { subscribeTabNotify } from '../realtime/notify';
 import GlassToast from '../components/GlassToast';
@@ -8,6 +8,7 @@ import LanguageSwitcher from '../components/LanguageSwitcher';
 import MapView, { type Captain } from '../components/MapView';
 import AssignCaptainView from '../features/assign/AssignCaptainView';
 import RatingModal from '../components/RatingModal';
+import StatusSelectionModal from '../components/StatusSelectionModal';
 import api from '../lib/api';
 import { getOrdersByStatus } from '../services/ordersApi';
 
@@ -81,11 +82,15 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{open:boolean; title:string; message:string; level?:'info'|'success'|'warning'|'error'}>({open:false, title:'', message:''});
   const [ratingModal, setRatingModal] = useState<{isOpen: boolean; orderId: number | null}>({isOpen: false, orderId: null});
+  const [statusSelectionModal, setStatusSelectionModal] = useState<{isOpen: boolean; orderId: number | null; currentStatus: string}>({isOpen: false, orderId: null, currentStatus: ''});
   
   // Debug: مراقبة تغييرات ratingModal
+  const isDev = import.meta.env.DEV;
   useEffect(() => {
-    console.log('🔴 ratingModal state changed:', ratingModal);
-  }, [ratingModal]);
+    if (isDev) {
+      console.log('🔴 ratingModal state changed:', ratingModal);
+    }
+  }, [ratingModal, isDev]);
   
   // Initialize from URL (?tab=...) and listen to back/forward
   useEffect(() => {
@@ -103,17 +108,23 @@ export default function Dashboard() {
   const t = translations[lang];
 
   const handleRate = (orderId: number) => {
-    console.log('🔴 handleRate called with orderId:', orderId);
-    console.log('🔴 Current ratingModal state:', ratingModal);
+    if (isDev) {
+      console.log('🔴 handleRate called with orderId:', orderId);
+      console.log('🔴 Current ratingModal state:', ratingModal);
+    }
     setRatingModal({ isOpen: true, orderId });
-    console.log('🔴 ratingModal state set to:', { isOpen: true, orderId });
+    if (isDev) {
+      console.log('🔴 ratingModal state set to:', { isOpen: true, orderId });
+    }
   };
 
   const handleRatingSubmit = async (rating: number, comment: string) => {
     if (!ratingModal.orderId) return;
     
     try {
-      console.log(`Rating submitted for order ${ratingModal.orderId}: ${rating} stars, comment: ${comment}`);
+      if (isDev) {
+        console.log(`Rating submitted for order ${ratingModal.orderId}: ${rating} stars, comment: ${comment}`);
+      }
       
       // إرسال التقييم للباكيند
       await api.orders.rating.add(ratingModal.orderId, rating, comment);
@@ -137,12 +148,69 @@ export default function Dashboard() {
     }
   };
 
+  const handleResolve = (orderId: number) => {
+    if (isDev) {
+      console.log('🔧 handleResolve called with orderId:', orderId);
+    }
+    const order = orders.find(o => o.order_id === orderId);
+    if (order) {
+      setStatusSelectionModal({
+        isOpen: true,
+        orderId: orderId,
+        currentStatus: order.status
+      });
+    }
+  };
+
+  // إنشاء دالة handleResolve جديدة لضمان أنها معرفة
+  const handleResolveOrder = useCallback((order: any) => {
+    if (isDev) {
+      console.log('🔧 handleResolveOrder called with order:', order);
+    }
+    setStatusSelectionModal({
+      isOpen: true,
+      orderId: order.order_id,
+      currentStatus: order.status
+    });
+  }, []); // إزالة isDev من dependencies لأنه ثابت
+
+  // Debug: تأكد من أن handleResolveOrder معرف
+  if (isDev) {
+    console.log('🔧 Dashboard: handleResolveOrder function exists:', typeof handleResolveOrder, 'activeTab:', activeTab);
+  }
+
+  // دالة مساعدة لتحديد onResolve
+  const getResolveHandler = (currentTab: string) => {
+    return currentTab === 'problem' ? handleResolveOrder : undefined;
+  };
+
+  const handleStatusSelect = async (orderId: number, newStatus: string) => {
+    try {
+      setLoading(true);
+      await api.orders.resolve(orderId, newStatus);
+      setToast({open: true, title: lang === 'ar' ? 'تم حل المشكلة' : 'Problem Resolved', message: lang === 'ar' ? `تم نقل الطلب إلى ${newStatus}` : `Order moved to ${newStatus}`, level: 'success'});
+      
+      // تحديث القائمة والعدادات
+      const [data, cnt] = await Promise.all([
+        getOrdersByStatus(activeTab),
+        api.orders.counts(),
+      ]);
+      setOrders(data);
+      setCounts(cnt);
+    } catch (error) {
+      console.error('Error resolving order:', error);
+      setToast({open: true, title: lang === 'ar' ? 'خطأ' : 'Error', message: lang === 'ar' ? 'فشل في حل المشكلة' : 'Failed to resolve problem', level: 'error'});
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     api.orders
       .counts()
       .then((data) => setCounts(data))
       .catch(() => {});
-  }, [lang]);
+  }, []); // إزالة lang من dependencies لأن العدادات لا تتغير مع اللغة
 
   useEffect(() => {
     const unsubscribe = subscribeTabNotify(activeTab, (msg: any) => {
@@ -161,23 +229,29 @@ export default function Dashboard() {
       .then((data) => setOrders(data))
       .catch(() => setError(t.error))
       .finally(() => setLoading(false));
-  }, [activeTab, lang]);
+  }, [activeTab]); // إزالة lang من dependencies لأن الطلبات لا تتغير مع اللغة
 
   const getCount = (status: string) => counts[status] ?? 0;
 
   const visibleOrders = useMemo(() => {
-    console.log('🔴 visibleOrders filter - activeTab:', activeTab, 'orders count:', orders.length);
+    if (isDev) {
+      console.log('🔴 visibleOrders filter - activeTab:', activeTab, 'orders count:', orders.length);
+    }
     const filtered = orders.filter((o) => {
       const st = String(o.current_status || o.status || '').toLowerCase();
-      console.log('🔴 Order', o.order_id, 'status:', st, 'activeTab:', activeTab, 'match:', st === activeTab);
+      if (isDev) {
+        console.log('🔴 Order', o.order_id, 'status:', st, 'activeTab:', activeTab, 'match:', st === activeTab);
+      }
       if (activeTab === 'problem') return st === 'problem';
       if (activeTab === 'cancelled') return st === 'cancelled';
       return st === activeTab;
     });
-    console.log('🔴 visibleOrders result count:', filtered.length);
-    console.log('🔴 visibleOrders orders:', filtered.map(o => ({ id: o.order_id, status: o.status })));
+    if (isDev) {
+      console.log('🔴 visibleOrders result count:', filtered.length);
+      console.log('🔴 visibleOrders orders:', filtered.map(o => ({ id: o.order_id, status: o.status })));
+    }
     return filtered;
-  }, [orders, activeTab]);
+  }, [orders, activeTab]); // إزالة isDev من dependencies لأنه ثابت
 
   const createDemoOrder = async () => {
     try {
@@ -285,7 +359,9 @@ export default function Dashboard() {
           }))}
           active={activeTab}
           onChange={(v)=>{
-            console.log('🔴 Tab changed from', activeTab, 'to', v);
+            if (isDev) {
+              console.log('🔴 Tab changed from', activeTab, 'to', v);
+            }
             setActiveTab(v);
             const rev: Record<string,string> = { choose_captain:'assign', problem:'issue' };
             const slug = rev[v] ?? v;
@@ -324,35 +400,38 @@ export default function Dashboard() {
               ) : visibleOrders.length === 0 ? (
                 <div className="text-center text-gray-400 py-8">{t.noOrders}</div>
               ) : (
-                visibleOrders.map((order) => (
-                  <OrderCard
-                    key={order.order_id}
-                    {...order}
-                    lang={lang}
-                    current_tab={activeTab}
-                    onStatusChange={handleStatusChange}
-                    onRate={handleRate}
-                  />
-                ))
+                                 visibleOrders.map((order) => (
+                   <OrderCard
+                     key={order.order_id}
+                     {...order}
+                     lang={lang}
+                     current_tab={activeTab}
+                     onStatusChange={handleStatusChange}
+                     onRate={handleRate}
+                     onResolve={getResolveHandler(activeTab)}
+                   />
+                 ))
               )}
             </div>
           </>
         ) : activeTab === 'processing' ? (
           <div className={`w-full flex flex-col ${lang === 'ar' ? 'lg:flex-row-reverse' : 'lg:flex-row'} gap-6 mt-4`}>
-            {/* Debug info */}
-            <div className="w-full mb-4 p-4 bg-gray-100 rounded-lg">
-              <h3 className="font-bold mb-2">🔍 معلومات التصحيح:</h3>
-              <p>إجمالي الطلبات: {visibleOrders.length}</p>
-              <p>الطلبات في حالة processing: {visibleOrders.filter(o => o.current_status === 'processing').length}</p>
-              <div className="mt-2">
-                <p className="font-semibold">تفاصيل الطلبات:</p>
-                {visibleOrders.map((order, index) => (
-                  <div key={index} className="text-sm text-gray-600">
-                    الطلب #{order.order_id}: status={order.status}, current_status={order.current_status}, substage={order.substage}
-                  </div>
-                ))}
+            {/* Debug info - فقط في development */}
+            {isDev && (
+              <div className="w-full mb-4 p-4 bg-gray-100 rounded-lg">
+                <h3 className="font-bold mb-2">🔍 معلومات التصحيح:</h3>
+                <p>إجمالي الطلبات: {visibleOrders.length}</p>
+                <p>الطلبات في حالة processing: {visibleOrders.filter(o => o.current_status === 'processing').length}</p>
+                <div className="mt-2">
+                  <p className="font-semibold">تفاصيل الطلبات:</p>
+                  {visibleOrders.map((order, index) => (
+                    <div key={index} className="text-sm text-gray-600">
+                      الطلب #{order.order_id}: status={order.status}, current_status={order.current_status}, substage={order.substage}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             
             {t.processingSubstages.map((sub) => {
               const subOrders = visibleOrders.filter((order) => {
@@ -377,16 +456,17 @@ export default function Dashboard() {
                     <div className="bg-blue-900 text-blue-100 rounded-lg p-4 text-center text-sm">{t.noOrders}</div>
                   ) : (
                     <div className="flex flex-col gap-4">
-                      {subOrders.map((order) => (
-                        <OrderCard
-                          key={order.order_id}
-                          {...order}
-                          lang={lang}
-                          current_tab={activeTab}
-                          onStatusChange={handleStatusChange}
-                          onRate={handleRate}
-                        />
-                      ))}
+                                             {subOrders.map((order) => (
+                         <OrderCard
+                           key={order.order_id}
+                           {...order}
+                           lang={lang}
+                           current_tab={activeTab}
+                           onStatusChange={handleStatusChange}
+                           onRate={handleRate}
+                           onResolve={getResolveHandler(activeTab)}
+                         />
+                       ))}
                     </div>
                   )}
                 </div>
@@ -411,16 +491,23 @@ export default function Dashboard() {
             ) : visibleOrders.length === 0 ? (
               <div className="text-center text-gray-400 py-8">{t.noOrders}</div>
             ) : (
-              visibleOrders.map((order) => (
-                                        <OrderCard
-                          key={order.order_id}
-                          {...order}
-                          lang={lang}
-                          current_tab={activeTab}
-                          onStatusChange={handleStatusChange}
-                          onRate={handleRate}
-                        />
-              ))
+                             visibleOrders.map((order) => {
+                 const resolveFunction = getResolveHandler(activeTab);
+                 if (isDev) {
+                   console.log('🔧 Rendering OrderCard for order:', order.order_id, 'activeTab:', activeTab, 'onResolve:', !!resolveFunction, 'resolveFunction type:', typeof resolveFunction);
+                 }
+                 return (
+                   <OrderCard
+                     key={order.order_id}
+                     {...order}
+                     lang={lang}
+                     current_tab={activeTab}
+                     onStatusChange={handleStatusChange}
+                     onRate={handleRate}
+                     onResolve={resolveFunction}
+                   />
+                 );
+               })
             )}
           </div>
         )}
@@ -432,6 +519,16 @@ export default function Dashboard() {
         onClose={() => setRatingModal({ isOpen: false, orderId: null })}
         orderId={ratingModal.orderId || 0}
         onSubmit={handleRatingSubmit}
+        lang={lang}
+      />
+
+      {/* Status Selection Modal */}
+      <StatusSelectionModal
+        isOpen={statusSelectionModal.isOpen}
+        onClose={() => setStatusSelectionModal({ isOpen: false, orderId: null, currentStatus: '' })}
+        onStatusSelect={handleStatusSelect}
+        orderId={statusSelectionModal.orderId || 0}
+        currentStatus={statusSelectionModal.currentStatus}
         lang={lang}
       />
 

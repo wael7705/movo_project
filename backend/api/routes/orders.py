@@ -275,6 +275,36 @@ async def mark_order_problem(order_id: int, session: AsyncSession = Depends(get_
     return serialize(order)
 
 
+@router.patch("/{order_id}/resolve", response_model=Dict[str, Any])
+async def resolve_order_problem(order_id: int, payload: Dict[str, Any] = Body(...), session: AsyncSession = Depends(get_session)):
+    """Resolve order from problem status to specified status."""
+    result = await session.execute(select(Order).where(Order.order_id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Check if order is currently in problem status
+    if order.status != 'problem':
+        raise HTTPException(status_code=400, detail="Order is not in problem status")
+
+    # Get target status from payload
+    target_status = payload.get("status")
+    if not target_status or target_status not in VALID:
+        raise HTTPException(status_code=422, detail="Invalid target status")
+
+    # Apply target status
+    order.status = target_status
+
+    # Initialize processing substage when moving into processing with no substage
+    if target_status == "processing" and not getattr(order, "current_stage_name", None):
+        order.current_stage_name = "waiting_approval"
+
+    await session.commit()
+    await session.refresh(order)
+
+    return serialize(order)
+
+
 @router.patch("/{order_id}", response_model=Dict[str, Any])
 async def update_order_status(order_id: int, payload: Dict[str, Any] = Body(None), session: AsyncSession = Depends(get_session)):
     """Generic status update endpoint: expects {"status": "..."}."""

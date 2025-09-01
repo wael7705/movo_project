@@ -118,6 +118,7 @@ CREATE TABLE restaurants (
     availability restaurant_availability_enum DEFAULT 'available',
     estimated_preparation_time INTEGER NOT NULL, -- in minutes
     price_matches BOOLEAN DEFAULT false, -- هل السعر مطابق؟
+    visible BOOLEAN DEFAULT true, -- هل المطعم مرئي في الواجهة؟
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
 
 );
@@ -180,6 +181,8 @@ CREATE TABLE captains (
     orders_delivered INTEGER DEFAULT 0,
     performance DECIMAL(3, 2) DEFAULT 5.00, -- Rating out of 5
     available BOOLEAN DEFAULT true,
+    last_lat NUMERIC(10,8) DEFAULT 33.51827734, -- آخر موقع معروف للكابتن (خط العرض)
+    last_lng NUMERIC(11,8) DEFAULT 36.27592445, -- آخر موقع معروف للكابتن (خط الطول)
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -313,6 +316,7 @@ CREATE TABLE notes (
     reference_id INTEGER NOT NULL, -- Unified reference ID for all entity types
     issue_id INTEGER REFERENCES issues(issue_id) ON DELETE SET NULL,
     note_text TEXT NOT NULL,
+    source VARCHAR(20) DEFAULT 'employee', -- مصدر الملاحظة (employee, customer, system, ai)
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     CHECK (
         (note_type = 'customer' AND target_type = 'customer') OR
@@ -867,6 +871,7 @@ COMMENT ON COLUMN call_logs.call_recording_url IS 'رابط لتسجيل الم�
 COMMENT ON COLUMN call_logs.call_type IS 'نوع المكالمة: وارد/صادر/دعم/تسويق...';
 
 COMMENT ON COLUMN notes.issue_id IS 'معرّف المشكلة المرتبطة بهذه الملاحظة (إن وجدت)';
+COMMENT ON COLUMN notes.source IS 'مصدر الملاحظة: employee (موظف)، customer (عميل)، system (نظام)، ai (ذكاء اصطناعي)';
 
 COMMENT ON FUNCTION update_employee_performance_on_issue_close() IS 'تقوم بتحديث تقييم الموظف تلقائياً عند إغلاق المشكلة (زيادة عدد المشاكل المحلولة، تحديث متوسط وقت الحل، وتقييم الكفاءة)';
 COMMENT ON TRIGGER trg_update_employee_performance_on_issue_close ON issues IS 'يعمل تلقائياً بعد تحديث حالة المشكلة إلى مغلقة أو تم الحل.';
@@ -875,6 +880,9 @@ COMMENT ON FUNCTION update_captain_delivered_orders() IS 'تقوم بتحديث 
 COMMENT ON TRIGGER trg_update_captain_delivered_orders ON orders IS 'يعمل تلقائياً بعد تحديث حالة الطلب إلى delivered لتحديث إحصائيات الكابتن.';
 
 COMMENT ON COLUMN restaurants.price_matches IS 'هل السعر مطابق مع النظام؟ (true/false)';
+COMMENT ON COLUMN restaurants.visible IS 'هل المطعم مرئي في الواجهة؟ (true/false)';
+COMMENT ON COLUMN captains.last_lat IS 'آخر موقع معروف للكابتن (خط العرض) - يستخدم لتحديد أقرب كابتن';
+COMMENT ON COLUMN captains.last_lng IS 'آخر موقع معروف للكابتن (خط الطول) - يستخدم لتحديد أقرب كابتن';
 
 COMMENT ON TABLE discounts IS 'جدول الحسومات والعروض المرن لدعم جميع أنواع العروض المستقبلية والتكامل مع الذكاء الاصطناعي والتسويق.';
 COMMENT ON COLUMN discounts.discount_type IS 'percentage: نسبة مئوية، fixed: مبلغ ثابت، free_delivery: توصيل مجاني، ...';

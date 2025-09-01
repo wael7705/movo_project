@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Gunicorn workers (can be overridden at runtime)
-ENV WORKERS=4
+ENV WORKERS=6
 
-# Start Gunicorn with Uvicorn workers
-CMD ["bash","-lc","exec gunicorn ${APP_MODULE:-backend.app:app} -k uvicorn.workers.UvicornWorker --workers ${WORKERS:-4} --bind 0.0.0.0:8000 --timeout 60"]
+# Start Gunicorn with Uvicorn workers - Performance optimized
+CMD ["bash","-lc","exec gunicorn ${APP_MODULE:-backend.app:app} -k uvicorn.workers.UvicornWorker --workers ${WORKERS:-6} --bind 0.0.0.0:8000 --timeout 30 --keep-alive 2 --max-requests 1000 --max-requests-jitter 100 --preload --worker-connections 1000 --worker-class uvicorn.workers.UvicornWorker"]
