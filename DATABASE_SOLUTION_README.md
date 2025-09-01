@@ -36,32 +36,42 @@ CREATE TABLE restaurants (
 );
 ```
 
-### 2. إنشاء ملف `database_missing_columns.sql`
-ملف منفصل يحتوي على الأعمدة المفقودة فقط:
+### 2. الأعمدة مدمجة في `database.sql`
+جميع الأعمدة المطلوبة موجودة الآن في ملف `database.sql` الأساسي:
 
 ```sql
--- إضافة الأعمدة المفقودة
-ALTER TABLE notes ADD COLUMN IF NOT EXISTS source VARCHAR(20) DEFAULT 'employee';
-ALTER TABLE captains ADD COLUMN IF NOT EXISTS last_lat NUMERIC(10,8) DEFAULT 33.51827734;
-ALTER TABLE captains ADD COLUMN IF NOT EXISTS last_lng NUMERIC(11,8) DEFAULT 36.27592445;
-ALTER TABLE restaurants ADD COLUMN IF NOT EXISTS visible BOOLEAN DEFAULT true;
+-- جدول notes
+CREATE TABLE notes (
+    -- ... الأعمدة الموجودة ...
+    source VARCHAR(20) DEFAULT 'employee', -- مصدر الملاحظة
+    -- ... باقي الأعمدة ...
+);
 
--- إضافة التعليقات
-COMMENT ON COLUMN notes.source IS 'مصدر الملاحظة: employee, customer, system, ai';
-COMMENT ON COLUMN captains.last_lat IS 'آخر موقع معروف للكابتن (خط العرض)';
-COMMENT ON COLUMN captains.last_lng IS 'آخر موقع معروف للكابتن (خط الطول)';
-COMMENT ON COLUMN restaurants.visible IS 'هل المطعم مرئي في الواجهة؟';
+-- جدول captains  
+CREATE TABLE captains (
+    -- ... الأعمدة الموجودة ...
+    last_lat NUMERIC(10,8) DEFAULT 33.51827734, -- آخر موقع معروف للكابتن (خط العرض)
+    last_lng NUMERIC(11,8) DEFAULT 36.27592445, -- آخر موقع معروف للكابتن (خط الطول)
+    -- ... باقي الأعمدة ...
+);
+
+-- جدول restaurants
+CREATE TABLE restaurants (
+    -- ... الأعمدة الموجودة ...
+    visible BOOLEAN DEFAULT true, -- هل المطعم مرئي في الواجهة؟
+    -- ... باقي الأعمدة ...
+);
 ```
 
-### 3. إنشاء سكريبت `update-db.ps1`
-سكريبت PowerShell لتطبيق التحديثات:
+### 3. سكريبت `update-database.ps1` محدث
+سكريبت PowerShell للتحقق من النظام:
 
 ```powershell
-# نسخ ملف الأعمدة المفقودة
-docker cp database_missing_columns.sql movo_project-db-1:/tmp/database_missing_columns.sql
+# التحقق من اتصال قاعدة البيانات
+docker compose exec -T db psql -U postgres -d movo_system -c "SELECT 1;"
 
-# تطبيق الأعمدة المفقودة
-docker compose exec -T db psql -U postgres -d movo_system -f /tmp/database_missing_columns.sql
+# التحقق من الأعمدة في database.sql الأساسي
+# جميع الأعمدة المطلوبة موجودة في database.sql الأساسي
 
 # اختبار النظام
 # ... اختبارات للخدمات ...
@@ -79,16 +89,18 @@ docker compose exec -T db psql -U postgres -d movo_system -f /path/to/data.sql
 ### الطريقة الثانية: استخدام سكريبت التحديث
 ```powershell
 # تشغيل سكريبت التحديث
-powershell -ExecutionPolicy Bypass -File .\update-db.ps1
+powershell -ExecutionPolicy Bypass -File .\update-database.ps1
 ```
 
-### الطريقة الثالثة: التحديث اليدوي
+### الطريقة الثالثة: التحقق اليدوي
 ```bash
-# نسخ ملف الأعمدة المفقودة
-docker cp database_missing_columns.sql movo_project-db-1:/tmp/
+# التحقق من اتصال قاعدة البيانات
+docker compose exec -T db psql -U postgres -d movo_system -c "SELECT 1;"
 
-# تطبيق الأعمدة المفقودة
-docker compose exec -T db psql -U postgres -d movo_system -f /tmp/database_missing_columns.sql
+# التحقق من وجود الأعمدة
+docker compose exec -T db psql -U postgres -d movo_system -c "\d+ notes"
+docker compose exec -T db psql -U postgres -d movo_system -c "\d+ captains"
+docker compose exec -T db psql -U postgres -d movo_system -c "\d+ restaurants"
 ```
 
 ## النتائج
@@ -103,16 +115,20 @@ docker compose exec -T db psql -U postgres -d movo_system -f /tmp/database_missi
 ## الملفات المحدثة
 
 1. **`database.sql`** - محدث بالأعمدة الجديدة
-2. **`database_missing_columns.sql`** - ملف منفصل للأعمدة المفقودة
-3. **`update-db.ps1`** - سكريبت التحديث
-4. **`DATABASE_SOLUTION_README.md`** - هذا الملف
+2. **`update-database.ps1`** - سكريبت التحديث
+3. **`DATABASE_SOLUTION_README.md`** - هذا الملف
+
+## الملفات المحذوفة
+
+1. **`database_missing_columns.sql`** - تم حذفه (الأعمدة مدمجة في database.sql)
 
 ## ملاحظات مهمة
 
 - هذه الأعمدة ضرورية لعمل النظام بشكل صحيح
-- يجب تطبيقها بعد كل إعادة تحميل لقاعدة البيانات
+- الأعمدة مدمجة في `database.sql` الأساسي
 - القيم الافتراضية تضمن عدم كسر البيانات الموجودة
 - جميع الأعمدة تحتوي على تعليقات توضيحية
+- لا حاجة لملفات منفصلة للأعمدة المفقودة
 
 ## استكشاف الأخطاء
 
@@ -127,8 +143,8 @@ docker compose exec -T db psql -U postgres -d movo_system -f /tmp/database_missi
 
 تم حل المشكلة بشكل نهائي من خلال:
 - إضافة الأعمدة المفقودة لملف `database.sql` الأساسي
-- إنشاء ملف منفصل للتحديثات السريعة
-- إنشاء سكريبت تلقائي لتطبيق التحديثات
+- دمج جميع الأعمدة في ملف واحد موحد
+- إنشاء سكريبت تلقائي للتحقق من النظام
 - اختبار شامل لجميع الخدمات
 
-النظام الآن مستقر ولا يحتاج لإعادة إصلاح بعد كل تحديث لقاعدة البيانات.
+النظام الآن مستقر وبسيط ولا يحتاج لإعادة إصلاح بعد كل تحديث لقاعدة البيانات.

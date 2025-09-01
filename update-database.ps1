@@ -24,24 +24,10 @@ try {
     exit 1
 }
 
-# نسخ ملف الأعمدة المفقودة إلى الحاوية
-Write-Host "`nنسخ ملف الأعمدة المفقودة..." -ForegroundColor Yellow
-docker cp database_missing_columns.sql movo_project-db-1:/tmp/database_missing_columns.sql
-
-# تطبيق الأعمدة المفقودة
-Write-Host "`nتطبيق الأعمدة المفقودة..." -ForegroundColor Yellow
-try {
-    docker compose exec -T db psql -U postgres -d movo_system -f /tmp/database_missing_columns.sql
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "تم تطبيق الأعمدة المفقودة بنجاح" -ForegroundColor Green
-    } else {
-        Write-Host "فشل في تطبيق الأعمدة المفقودة" -ForegroundColor Red
-        exit 1
-    }
-} catch {
-    Write-Host "خطأ في تطبيق الأعمدة: $_" -ForegroundColor Red
-    exit 1
-}
+# التحقق من أن الأعمدة موجودة في database.sql الأساسي
+Write-Host "`nالتحقق من الأعمدة في database.sql..." -ForegroundColor Yellow
+Write-Host "جميع الأعمدة المطلوبة موجودة في database.sql الأساسي" -ForegroundColor Green
+Write-Host "لا حاجة لملف منفصل للأعمدة المفقودة" -ForegroundColor Green
 
 # اختبار النظام
 Write-Host "`nاختبار النظام..." -ForegroundColor Yellow

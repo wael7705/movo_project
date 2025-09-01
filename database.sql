@@ -807,6 +807,9 @@ CREATE INDEX IF NOT EXISTS idx_menu_item_options_item_id ON menu_item_options(it
 CREATE INDEX IF NOT EXISTS idx_menu_item_options_is_available ON menu_item_options(is_available);
 CREATE INDEX IF NOT EXISTS idx_menu_item_options_item_available ON menu_item_options(item_id, is_available);
 
+-- Restaurants indexes
+CREATE INDEX IF NOT EXISTS idx_restaurants_visible ON restaurants(visible);
+
 -- =============
 -- COMMENTS
 -- =============

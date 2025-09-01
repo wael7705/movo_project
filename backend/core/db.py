@@ -13,6 +13,13 @@ engine = create_async_engine(
 	pool_size=15,
 	max_overflow=25,
 	future=True,
+	# إعدادات الترميز للنصوص العربية
+	connect_args={
+		"server_settings": {
+			"client_encoding": "utf8",
+		},
+		"statement_cache_size": 0,  # إصلاح مشكلة PgBouncer
+	},
 )
 
 AsyncSessionLocal = async_sessionmaker(

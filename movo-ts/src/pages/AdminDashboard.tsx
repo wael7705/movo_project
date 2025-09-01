@@ -7,6 +7,8 @@ import api from '../lib/api';
 import OutForDeliveryView from '../features/delivery/OutForDeliveryView';
 import NotesModal from '../components/NotesModal';
 import GlassToast from '../components/GlassToast';
+import NotificationInbox from '../components/NotificationInbox';
+import { useNotifications, handleWebSocketMessage } from '../store/notifications';
 
 const translations = {
   ar: {
@@ -47,6 +49,31 @@ export default function Dashboard() {
   const [notesForOrderId, setNotesForOrderId] = useState<number | null>(null);
   const [ordersWithNotes, setOrdersWithNotes] = useState<Record<number, boolean>>({});
   const [toast, setToast] = useState<{open:boolean; title:string; message:string; level?:'info'|'success'|'warning'|'error'}>({open:false, title:'', message:''});
+  
+  // Notifications
+  const { addNotification } = useNotifications();
+
+  // WebSocket for notifications
+  useEffect(() => {
+    const ws = new WebSocket(`ws://localhost:8000/ws/admin`);
+    
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        handleWebSocketMessage(message, addNotification);
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [addNotification]);
 
   const sections = ([
     { title: lang === 'ar' ? 'قيد الانتظار' : 'Pending', status: 'pending' },
@@ -180,12 +207,15 @@ export default function Dashboard() {
       <div className="max-w-full px-4 py-8 mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-2xl font-bold text-purple-800">{t.dashboardTitle}</h1>
-          <button 
-            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
-            onClick={handleCreateDemoOrder}
-          >
-            {lang === 'ar' ? 'إنشاء طلب وهمي' : 'Create Dummy Order'}
-          </button>
+          <div className="flex items-center gap-4">
+            <NotificationInbox tab={activeTab} />
+            <button 
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+              onClick={handleCreateDemoOrder}
+            >
+              {lang === 'ar' ? 'إنشاء طلب وهمي' : 'Create Dummy Order'}
+            </button>
+          </div>
         </div>
         <LanguageSwitcher currentLang={lang} onSwitch={setLang} />
         <Tabs

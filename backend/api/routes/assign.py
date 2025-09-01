@@ -1,3 +1,8 @@
+# إعدادات الترميز للنصوص العربية
+import os
+import sys
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import List
@@ -41,8 +46,29 @@ class Candidate(BaseModel):
     last_order_ids: List[int] = []
 
 
+@router.get("/test-encoding")
+async def test_encoding():
+    """اختبار ترميز النصوص العربية"""
+    return {
+        "message": "مرحباً بك في نظام Movo",
+        "captain_name": "أحمد محمد",
+        "restaurant_name": "مطعم الشام",
+        "status": "نجح الاختبار"
+    }
+
 @router.get("/orders/{order_id}/candidates", response_model=List[Candidate])
-async def candidates(order_id: int, radius_km: float = 5, session: AsyncSession = Depends(get_session)):
+async def candidates(order_id: int, radius_km: float = 5, max_candidates: int = 5, session: AsyncSession = Depends(get_session)):
+    """
+    ترشيح أفضل الكباتن للطلب
+    
+    Args:
+        order_id: معرف الطلب
+        radius_km: نصف قطر البحث بالكيلومتر (افتراضي: 5)
+        max_candidates: الحد الأقصى لعدد الكباتن المرشحين (افتراضي: 5)
+    
+    Returns:
+        قائمة بأفضل الكباتن مرتبة حسب النقاط (المسافة + الأداء + الخبرة)
+    """
     # احصل على الطلب والمطعم
     result = await session.execute(select(Order).where(Order.order_id == order_id))
     order = result.scalar_one_or_none()
@@ -57,8 +83,13 @@ async def candidates(order_id: int, radius_km: float = 5, session: AsyncSession 
     ref_lat = float(restaurant.latitude)
     ref_lng = float(restaurant.longitude)
 
-    # أحضر كباتن متاحين
-    result = await session.execute(select(Captain).where(Captain.available == True))
+    # أحضر كباتن متاحين مع ترتيب حسب الأداء (لضمان أفضل الكباتن)
+    result = await session.execute(
+        select(Captain)
+        .where(Captain.available == True)
+        .order_by(Captain.performance.desc(), Captain.orders_delivered.desc())
+        .limit(max_candidates * 3)  # جلب 3 أضعاف الحد المطلوب للفلترة
+    )
     captains = result.scalars().all()
 
     out: List[Candidate] = []
@@ -76,9 +107,15 @@ async def candidates(order_id: int, radius_km: float = 5, session: AsyncSession 
             avg_speed_kmh = 25.0
             travel_hours = d / avg_speed_kmh
             eta_sec = int(travel_hours * 3600 + 60)
-            # سكور: أقرب مسافة وأقل حمل أفضل
+            # سكور محسن: المسافة + الأداء + عدد الطلبات المسلمة
             active_orders = 0
-            score = max(0.0, 1.0 - (d / radius_km)) + (0.5 if active_orders == 0 else 0.0)
+            distance_score = max(0.0, 1.0 - (d / radius_km))  # 0-1 (أقرب = أفضل)
+            performance_score = (c.performance or 5.0) / 5.0  # 0-1 (أداء عالي = أفضل)
+            experience_score = min(1.0, (c.orders_delivered or 0) / 100.0)  # 0-1 (خبرة أكثر = أفضل)
+            availability_bonus = 0.5 if active_orders == 0 else 0.0  # مكافأة التوفر
+            
+            # النقاط النهائية: 40% مسافة + 30% أداء + 20% خبرة + 10% توفر
+            score = (distance_score * 0.4) + (performance_score * 0.3) + (experience_score * 0.2) + availability_bonus
             out.append(
                 Candidate(
                     captain_id=c.captain_id,
@@ -95,7 +132,9 @@ async def candidates(order_id: int, radius_km: float = 5, session: AsyncSession 
 
     # رتب حسب score ثم المسافة
     out.sort(key=lambda x: (-(x.score or 0), x.distance_km))
-    return out
+    
+    # إرجاع أفضل الكباتن فقط (حد أقصى 5)
+    return out[:max_candidates]
 
 
 class AssignIn(BaseModel):
