@@ -30,21 +30,29 @@ export default function AssignCaptainView(props: {
   const hoverWsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    console.log('Loading candidates for order', orderId);
+    if (import.meta.env.DEV) {
+      console.log('Loading candidates for order', orderId);
+    }
     fetch(`/api/v1/assign/orders/${orderId}/candidates`)
       .then(r => {
-        console.log('Candidates response status:', r.status);
+        if (import.meta.env.DEV) {
+          console.log('Candidates response status:', r.status);
+        }
         if (!r.ok) {
           throw new Error(`HTTP ${r.status}: ${r.statusText}`);
         }
         return r.json();
       })
       .then(data => {
-        console.log('Candidates loaded:', data);
+        if (import.meta.env.DEV) {
+          console.log('Candidates loaded:', data);
+        }
         setCands(data);
       })
       .catch(error => {
-        console.error('Failed to load candidates:', error);
+        if (import.meta.env.DEV) {
+          console.error('Failed to load candidates:', error);
+        }
         setCands([]);
       });
   }, [orderId]);
@@ -93,7 +101,9 @@ export default function AssignCaptainView(props: {
     setAssigningId(cid);
     
     try {
-      console.log('Assigning captain', cid, 'to order', orderId);
+      if (import.meta.env.DEV) {
+        console.log('Assigning captain', cid, 'to order', orderId);
+      }
       
       const response = await fetch(`/api/v1/assign/orders/${orderId}/assign`, {
         method: 'POST',
@@ -104,20 +114,28 @@ export default function AssignCaptainView(props: {
         body: JSON.stringify({ captain_id: cid }),
       });
       
-      console.log('Response status:', response.status);
+      if (import.meta.env.DEV) {
+        console.log('Response status:', response.status);
+      }
       
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Failed to assign captain:', response.status, response.statusText, errorText);
+        if (import.meta.env.DEV) {
+          console.error('Failed to assign captain:', response.status, response.statusText, errorText);
+        }
         setAssigningId(null);
         return;
       }
       
       const result = await response.json();
-      console.log('Assign result:', result);
+      if (import.meta.env.DEV) {
+        console.log('Assign result:', result);
+      }
       
       if (result.ok) {
-        console.log('Captain assigned successfully');
+        if (import.meta.env.DEV) {
+          console.log('Captain assigned successfully');
+        }
         onWaiting?.(cid);
         setSelectedCaptainId(cid);
         
@@ -125,51 +143,71 @@ export default function AssignCaptainView(props: {
         try {
           const ws = createCaptainSocketWS(cid);
           ws.onopen = () => {
-            console.log('WebSocket connected for captain', cid);
+            if (import.meta.env.DEV) {
+              console.log('WebSocket connected for captain', cid);
+            }
             ws.send(JSON.stringify({ type: 'assign', order_id: orderId }));
           };
           
           ws.onmessage = async (ev) => {
             try {
               const msg = JSON.parse(ev.data);
-              console.log('WebSocket message:', msg);
+              if (import.meta.env.DEV) {
+                console.log('WebSocket message:', msg);
+              }
               if (msg?.type === 'accepted' && msg.order_id === orderId) {
-                console.log('Captain accepted order');
+                if (import.meta.env.DEV) {
+                  console.log('Captain accepted order');
+                }
                 await api.orders.next(orderId);
                 onAssigned?.();
                 ws.close();
                 setAssigningId(null);
               }
             } catch (error) {
-              console.error('WebSocket message error:', error);
+              if (import.meta.env.DEV) {
+                console.error('WebSocket message error:', error);
+              }
             }
           };
           
           ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
+            if (import.meta.env.DEV) {
+              console.warn('WebSocket error for captain', cid);
+            }
             setAssigningId(null);
           };
           
           ws.onclose = () => {
-            console.log('WebSocket closed for captain', cid);
+            if (import.meta.env.DEV) {
+              console.log('WebSocket closed for captain', cid);
+            }
           };
         } catch (wsError) {
-          console.error('WebSocket creation error:', wsError);
+          if (import.meta.env.DEV) {
+            console.error('WebSocket creation error:', wsError);
+          }
         }
         
         // timeout للتأكد من عدم تعليق الزر
         setTimeout(() => {
           if (assigningId === cid) {
-            console.log('Timeout reached, resetting assigningId');
+            if (import.meta.env.DEV) {
+              console.log('Timeout reached, resetting assigningId');
+            }
             setAssigningId(null);
           }
         }, 10000);
       } else {
-        console.error('Assign result not ok:', result);
+        if (import.meta.env.DEV) {
+          console.error('Assign result not ok:', result);
+        }
         setAssigningId(null);
       }
     } catch (error) {
-      console.error('Assign captain error:', error);
+      if (import.meta.env.DEV) {
+        console.error('Assign captain error:', error);
+      }
       setAssigningId(null);
     }
   };

@@ -35,7 +35,9 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+admin_manager = ConnectionManager()  # Manager for admin connections
 _PUBSUB_CHANNEL_PREFIX = "captain:"
+_ADMIN_PUBSUB_CHANNEL = "admin:"
 
 
 @router.websocket("/ws/captain/{captain_id}")
@@ -143,5 +145,48 @@ async def ws_captain(websocket: WebSocket, captain_id: int):
             with contextlib.suppress(Exception):
                 await pos_task
         manager.disconnect(captain_id, websocket)
+
+
+@router.websocket("/ws/admin")
+async def ws_admin(websocket: WebSocket):
+    await admin_manager.connect(0, websocket)  # Use 0 as admin ID
+    
+    # Subscribe to Redis for admin notifications
+    pubsub_task = None
+    try:
+        from core.redis import get_redis
+        import json
+
+        async def _admin_pubsub_loop():
+            r = await get_redis()
+            if not r:
+                return
+            psub = r.pubsub()
+            await psub.subscribe(_ADMIN_PUBSUB_CHANNEL)
+            async for msg in psub.listen():
+                if msg and msg.get('type') == 'message':
+                    try:
+                        data = json.loads(msg.get('data'))
+                        await admin_manager.send_json(0, data)
+                    except Exception:
+                        pass
+
+        pubsub_task = asyncio.create_task(_admin_pubsub_loop())
+    except Exception:
+        pubsub_task = None
+
+    try:
+        while True:
+            # Keep connection alive and handle any admin messages
+            msg = await websocket.receive_json()
+            # Handle admin-specific messages if needed
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if pubsub_task and not pubsub_task.done():
+            pubsub_task.cancel()
+            with contextlib.suppress(Exception):
+                await pubsub_task
+        admin_manager.disconnect(0, websocket)
 
 

@@ -53,25 +53,88 @@ export default function Dashboard() {
   // Notifications
   const { addNotification } = useNotifications();
 
-  // WebSocket for notifications
+  // WebSocket for notifications - with better error handling
   useEffect(() => {
-    const ws = new WebSocket(`ws://localhost:8000/ws/admin`);
-    
-    ws.onmessage = (event) => {
+    let ws: WebSocket | null = null;
+    let reconnectTimeout: number | null = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 3; // Reduced attempts
+    const reconnectDelay = 5000; // Increased delay
+
+    const connectWebSocket = () => {
       try {
-        const message = JSON.parse(event.data);
-        handleWebSocketMessage(message, addNotification);
+        // Check if WebSocket is supported
+        if (!window.WebSocket) {
+          if (import.meta.env.DEV) {
+            console.warn('WebSocket not supported in this browser');
+          }
+          return;
+        }
+
+        ws = new WebSocket(`ws://localhost:8000/ws/admin`);
+        
+        ws.onopen = () => {
+          if (import.meta.env.DEV) {
+            console.log('✅ WebSocket connected successfully');
+          }
+          reconnectAttempts = 0; // Reset on successful connection
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            handleWebSocketMessage(message, addNotification);
+          } catch (error) {
+            if (import.meta.env.DEV) {
+              console.error('Error parsing WebSocket message:', error);
+            }
+          }
+        };
+
+        ws.onerror = (error) => {
+          // Suppress error logging to reduce console noise
+          if (import.meta.env.DEV && reconnectAttempts === 0) {
+            console.warn('WebSocket connection failed - notifications disabled');
+          }
+        };
+
+        ws.onclose = (event) => {
+          if (import.meta.env.DEV && event.code !== 1000) {
+            console.log('WebSocket connection closed');
+          }
+          
+          // Attempt to reconnect if we haven't exceeded max attempts
+          if (reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            reconnectTimeout = setTimeout(() => {
+              if (import.meta.env.DEV) {
+                console.log(`🔄 Reconnecting WebSocket (${reconnectAttempts}/${maxReconnectAttempts})`);
+              }
+              connectWebSocket();
+            }, reconnectDelay);
+          } else if (import.meta.env.DEV) {
+            console.log('❌ WebSocket reconnection failed - notifications disabled');
+          }
+        };
       } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
+        if (import.meta.env.DEV) {
+          console.error('Failed to create WebSocket connection:', error);
+        }
       }
     };
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-    };
+    // Only connect in development or if explicitly enabled
+    if (import.meta.env.DEV || window.location.search.includes('ws=true')) {
+      connectWebSocket();
+    }
 
     return () => {
-      ws.close();
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close(1000, 'Component unmounting');
+      }
     };
   }, [addNotification]);
 
