@@ -49,7 +49,7 @@ services:
           memory: 256M
           cpus: '0.5'
     environment:
-      DATABASE_URL: "postgresql+asyncpg://postgres:movo2025@pgbouncer:6432/movo_system?client_encoding=utf8"
+      DATABASE_URL: "postgresql+asyncpg://postgres:movo2025@pgbouncer:6432/movo_system"
       APP_MODULE: "backend.app:socket_app"
       WORKERS: "6"
       REDIS_URL: "redis://redis:6379/0"

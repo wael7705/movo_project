@@ -15,9 +15,6 @@ engine = create_async_engine(
 	future=True,
 	# إعدادات الترميز للنصوص العربية
 	connect_args={
-		"server_settings": {
-			"client_encoding": "utf8",
-		},
 		"statement_cache_size": 0,  # إصلاح مشكلة PgBouncer
 	},
 )
